@@ -26,22 +26,40 @@ def parse_args():
     p.add_argument(
         "--model", type=str, default="unet3d", choices=["unet3d", "unetr", "swinunetr"]
     )
-    p.add_argument(
-        "--channels", type=int, default=32, help="UNet3D第一层通道数,默认32"
-    )
+    p.add_argument("--channels", type=int, default=32, help="UNet3D第一层通道数,默认32")
     return p.parse_args()
 
 
 def get_gpu_memory():
+    """
+    返回当前可用 GPU 的显存信息 (GB)
+    返回: {"total": xx, "free": xx, "used": xx} 或 None
+    """
     try:
         import torch
 
-        if torch.cuda.is_available():
-            mem = torch.cuda.get_device_properties(0).total_memory
-            return mem / (1024**3)
-    except:
-        pass
-    return None
+        if not torch.cuda.is_available():
+            return None
+
+        device = torch.cuda.current_device()
+        props = torch.cuda.get_device_properties(device)
+        total = props.total_memory / (1024**3)
+
+        # 已用 / 剩余
+        reserved = torch.cuda.memory_reserved(device) / (1024**3)
+        allocated = torch.cuda.memory_allocated(device) / (1024**3)
+        free = total - reserved
+
+        return {
+            "total": round(total, 2),
+            "free": round(free, 2),
+            "used": round(allocated, 2),
+            "device": device,
+            "gpu_name": props.name,
+        }
+    except Exception as e:
+        print(f"[warn] get_gpu_memory 失败: {e}")
+        return None
 
 
 def estimate_patch_memory_gb(patch_size, model_name, channels):
@@ -127,9 +145,9 @@ def main():
 
     print(
         f"""
-{"="*50}
+{"=" * 50}
         推理参数推荐(nnUNet思想)
-{"="*50}
+{"=" * 50}
 
   模型:          {args.model}
   Patch大小:     {D}×{H}×{W} = {voxels:,} 体素
@@ -137,20 +155,20 @@ def main():
   可用显存:      {avail:.1f} GB(扣除模型参数+安全余量)
   单patch显存:   {patch_mem:.2f} GB(估算)
 
-{"─"*50}
+{"─" * 50}
   推荐参数:
 
   overlap      = 0.5     ← nnUNet固定值,不统计
   sw_batch_size = {sw_batch}     ← 根据显存推算
 
-{"─"*50}
+{"─" * 50}
   overlap 取值说明:
 
   overlap=0.25  快,但边缘预测差,tumor dice损失明显
   overlap=0.50  nnUNet默认,质量/速度最优平衡  ✅
   overlap=0.75  最准,但推理时间是0.5的 ~4倍,通常不值得
 
-{"─"*50}
+{"─" * 50}
   在 train.py 中的调用:
 
   metrics = validate_sliding_window(
@@ -160,10 +178,10 @@ def main():
       overlap=0.5,                 # ← 固定0.5
       num_classes=3,
   )
-{"="*50}
+{"=" * 50}
 
   💡 如果推理时OOM(显存不足):
-     把 sw_batch_size 从 {sw_batch} 改为 {max(1, sw_batch-1)}
+     把 sw_batch_size 从 {sw_batch} 改为 {max(1, sw_batch - 1)}
 
   💡 如果推理很慢但显存有余:
      sw_batch_size 可以适当增大,最大建议不超过 8

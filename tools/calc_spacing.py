@@ -83,10 +83,10 @@ def main():
         target = (round(in_plane, 2), round(in_plane, 2), round(in_plane, 2))
         note = "接近各向同性,三轴统一"
 
-    print(f"\n========== 推荐 Target Spacing ==========")
+    print("\n========== 推荐 Target Spacing ==========")
     print(f"类型   : {note}")
     print(f"推荐   : {list(target)}")
-    print(f"\n把这个值填进 preprocess_resample.py:")
+    print("\n把这个值填进 preprocess_resample.py:")
     print(f"  pixdim = {list(target)}")
 
 

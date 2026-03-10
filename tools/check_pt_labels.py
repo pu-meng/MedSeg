@@ -13,7 +13,7 @@ import os
 import glob
 import argparse
 import torch
-import numpy as np
+
 
 
 def parse_args():
@@ -105,7 +105,7 @@ def main():
     print(f"检查完毕:{len(paths)} 个文件,{len(errors)} 个有问题")
     print(f"所有文件出现过的 label 值: {sorted(all_unique_labels)}")
     if errors:
-        print(f"\n❌ 有问题的文件:")
+        print("\n❌ 有问题的文件:")
         for e in errors:
             print(f"   {e}")
     else:

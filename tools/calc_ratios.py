@@ -17,7 +17,7 @@ def main():
     p.add_argument(
         "--data_root",
         type=str,
-        default="/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task03_Liver_0.88mm",
+        default="/home/pumengyu/Task03_Liver",
     )
     p.add_argument("--num_classes", type=int, default=3)
     args = p.parse_args()
@@ -78,21 +78,21 @@ def main():
         name = class_names.get(c, f"class{c}")
         print(f"  class {c} ({name}): {r}")
 
-    print(f"\n在 transforms.py / train.py 里使用:")
+    print("\n在 transforms.py / train.py 里使用:")
     print(f"  ratios = {ratios_full}")
-    print(f"\nRandCropByLabelClassesd 参数:")
+    print("\nRandCropByLabelClassesd 参数:")
     print(f"  ratios=list({ratios_full})")
 
     # ── 额外建议 ────────────────────────────────────────────────
     tumor_presence = class_cases[2] / len(lab_paths)
     if tumor_presence < 0.5:
         print(
-            f"\n[注意] 只有 {class_cases[2]} 个 case 有肿瘤({tumor_presence*100:.1f}%),"
+            f"\n[注意] 只有 {class_cases[2]} 个 case 有肿瘤({tumor_presence * 100:.1f}%),"
             f"建议同时用 --train_n 筛掉纯阴性 case,或在采样时强制保证 tumor patch 比例."
         )
     else:
         print(
-            f"\n[OK] {class_cases[2]} 个 case 有肿瘤({tumor_presence*100:.1f}%),"
+            f"\n[OK] {class_cases[2]} 个 case 有肿瘤({tumor_presence * 100:.1f}%),"
             f"ratios 设置有效."
         )
 
