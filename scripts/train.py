@@ -16,7 +16,14 @@ import warnings
 from medseg.utils.warnings import setup_warnings
 
 
-from medseg.utils.train_utils import set_seed, get_stage_ratios, build_metrics, build_report, load_data, build_loaders_auto
+from medseg.utils.train_utils import (
+    set_seed,
+    get_stage_ratios,
+    build_metrics,
+    build_report,
+    load_data,
+    build_loaders_auto,
+)
 from medseg.utils.ckpt import load_ckpt
 
 
@@ -32,7 +39,6 @@ from medseg.utils.train_logger import TrainLogger
 from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
 
 setup_warnings()
-
 
 
 warnings.filterwarnings("ignore", message="no available indices of class")
@@ -116,7 +122,22 @@ def parse_args():
         default=1,
         help="离线数据集重复次数,增加epoch内迭代次数,建议根据训练时长调整,先用默认值1",
     )
-    p.add_argument("--resume", type=str, default=None,help="Checkpoint路径")
+    p.add_argument("--resume", type=str, default=None, help="Checkpoint路径")
+    p.add_argument(
+        "--early_ratios",
+        type=float,
+        nargs=3,
+        default=[0.0, 1.0, 0.0],
+        help="前半段采样比例 背景/肝脏/肿瘤",
+    )
+    p.add_argument(
+        "--late_ratios",
+        type=float,
+        nargs=3,
+        default=[0.0, 0.5, 0.5],
+        help="后半段采样比例 背景/肝脏/肿瘤",
+    )
+
     return p.parse_args()
 
 
@@ -180,7 +201,7 @@ def main():
 
     # 数据加载与 split
     # 数据加载:离线 .pt 或原来的 .nii.gz
-    
+
     tr, va, use_offline = load_data(args)
 
     # model/optim
@@ -192,11 +213,9 @@ def main():
     ).to(device)
 
     optim = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
-   
 
     scaler = torch.amp.GradScaler() if (args.amp and device == "cuda") else None
 
-   
     logger = TrainLogger(workdir)
 
     best = -1.0
@@ -205,18 +224,23 @@ def main():
     if args.resume and os.path.exists(args.resume):
         ckpt = load_ckpt(args.resume, model, optim, map_location=device)
         start_epoch = ckpt["epoch"] + 1
-        best = ckpt["best_metric"]   # ← 注意是 best_metric
+        best = ckpt["best_metric"]  # ← 注意是 best_metric
         print(f"resume 从 epoch {ckpt['epoch']} 继续, best={best:.4f}")
 
     best_epoch = -1
     best_c1 = None
     best_c2 = None
 
-  
     val_c1 = float("nan")
     val_c2 = float("nan")
-    init_ratios = get_stage_ratios(1, args.epochs)
-    train_loader, val_loader = build_loaders_auto(args, tr, va, use_offline, init_ratios)
+
+    init_ratios = get_stage_ratios(
+        1, args.epochs, tuple(args.early_ratios), tuple(args.late_ratios)
+    )
+
+    train_loader, val_loader = build_loaders_auto(
+        args, tr, va, use_offline, init_ratios
+    )
     current_ratios = init_ratios
 
     for epoch in range(start_epoch, args.epochs + 1):
@@ -225,14 +249,18 @@ def main():
         print(f"Epoch {epoch}/{args.epochs}")
 
         # ✅ 分阶段 ratios:每个 epoch 动态创建 train_loader
-        new_ratios = get_stage_ratios(epoch, args.epochs)
+        new_ratios = get_stage_ratios(
+            epoch, args.epochs, tuple(args.early_ratios), tuple(args.late_ratios)
+        )
         print(f"[epoch {epoch}] crop ratios={new_ratios}")
         if new_ratios != current_ratios:
             current_ratios = new_ratios
             print(
                 f"更新采样比例为 {current_ratios},重新缓存+重新创建 train_loader(val_loader 不变)"
             )
-            train_loader, _ = build_loaders_auto(args, tr, va, use_offline, current_ratios)
+            train_loader, _ = build_loaders_auto(
+                args, tr, va, use_offline, current_ratios
+            )
         train_loss = train_one_epoch(
             model,
             train_loader,
@@ -259,7 +287,7 @@ def main():
                 return_per_class=True,
                 overlap=args.overlap,
             )
-          
+
             per = metrics["per_class"]
             val_c1 = float(per[0]) if len(per) > 0 else float("nan")
             val_c2 = float(per[1]) if len(per) > 1 else float("nan")
@@ -278,12 +306,11 @@ def main():
         # 日志:建议每个 epoch 都写,至少能看训练是否“在动”
         lr = float(optim.param_groups[0]["lr"])
         now = datetime.now().strftime("%m-%d-%H-%M")
- 
+
         logger.log(epoch, train_loss, val_c1, val_c2, best, lr)
 
-
         dt = time.time() - t0
-        dt_m=dt/60
+        dt_m = dt / 60
         if did_val:
             print(
                 f"[{now}][Epoch {epoch:03d}] loss={train_loss:.4f}  "
@@ -295,11 +322,14 @@ def main():
     # ✅ 训练结束:统一写 metrics.json + report.txt(只写指标,不重复配置)
 
     metrics_out = build_metrics(
-        best, best_epoch, best_c1, best_c2,
+        best,
+        best_epoch,
+        best_c1,
+        best_c2,
         time.time() - start_time,
         args.epochs,
         len(tr),
-        len(va)
+        len(va),
     )
     report = build_report(metrics_out)
     save_json(metrics_out, workdir, "metrics")
@@ -309,7 +339,6 @@ def main():
     if best_epoch < 0:  # 表示从未验证过
         save_ckpt(final_best_path, model, optim, args.epochs, best)
         print("从未验证过,用 last 当 best", final_best_path)
-    
 
     print(report)
 

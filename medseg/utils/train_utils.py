@@ -7,6 +7,7 @@ from medseg.data.dataset_offline import load_pt_paths, split_pt_paths
 
 from medseg.data.build_loader import build_loaders, build_loaders_offline
 
+
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -14,31 +15,34 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
 
 
-def get_stage_ratios(epoch: int, epochs: int):
+def get_stage_ratios(
+    epoch: int, epochs: int, early_ratios=(0.0, 1.0, 0.0), late_ratios=(0.0, 0.5, 0.5)
+):
     """
-    分阶段采样策略:
-    前 1/3 epoch:以 liver 为主,让模型先学会找肝脏
-    后 2/3 epoch:增加 tumor 比例,精细化肿瘤分割
+    early_ratios: 前半段使用的采样比例
+    late_ratios: 后半段使用的采样比例
+    如果 early_ratios == late_ratios, 全程用同一个比例
     """
-    cut = int(epochs / 3)
+    cut = int(epochs / 2)
     if epoch <= cut:
-        return (0.0, 0.7, 0.3)
+        return early_ratios
     else:
-        return (0.0, 0.4, 0.6)
+        return late_ratios
 
 
-def build_metrics(best, best_epoch, best_c1, best_c2,
-                  total_sec, epochs, n_train, n_val):
+def build_metrics(
+    best, best_epoch, best_c1, best_c2, total_sec, epochs, n_train, n_val
+):
     """训练结束后整理最终指标,返回 dict"""
     return {
-        "best_score":        round(float(best), 4),
-        "best_epoch":        int(best_epoch),
-        "best_liver_dice":   None if best_c1 is None else round(float(best_c1), 4),
-        "best_tumor_dice":   None if best_c2 is None else round(float(best_c2), 4),
+        "best_score": round(float(best), 4),
+        "best_epoch": int(best_epoch),
+        "best_liver_dice": None if best_c1 is None else round(float(best_c1), 4),
+        "best_tumor_dice": None if best_c2 is None else round(float(best_c2), 4),
         "total_train_hours": round(total_sec / 3600.0, 2),
-        "epochs":            int(epochs),
-        "n_train_cases":     int(n_train),
-        "n_val_cases":       int(n_val),
+        "epochs": int(epochs),
+        "n_train_cases": int(n_train),
+        "n_val_cases": int(n_val),
     }
 
 
@@ -54,8 +58,6 @@ def build_report(metrics: dict) -> str:
         f"total_train_hours:{metrics['total_train_hours']}",
     ]
     return "\n".join(lines)
-
-
 
 
 def load_data(args):
@@ -90,15 +92,14 @@ def load_data(args):
     return tr, va, use_offline
 
 
-
-
 def build_loaders_auto(args, tr, va, use_offline, ratios):
     """
     根据 use_offline 自动选择离线/在线 loader
     """
     if use_offline:
         return build_loaders_offline(
-            tr, va,
+            tr,
+            va,
             patch_size=tuple(args.patch),
             batch_size=args.batch_size,
             num_workers=args.num_workers,
@@ -108,7 +109,8 @@ def build_loaders_auto(args, tr, va, use_offline, ratios):
         )
     else:
         return build_loaders(
-            tr, va,
+            tr,
+            va,
             patch_size=tuple(args.patch),
             batch_size=args.batch_size,
             num_workers=args.num_workers,
