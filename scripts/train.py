@@ -151,8 +151,11 @@ def main():
     if args.data_root is None:
         args.data_root = task_cfg.get("data_root", DEFAULT_DATA_ROOT)
     if args.num_classes is None:
-        args.num_classes = int(task_cfg.get("num_classes", 2))
-
+        if "num_classes" not in task_cfg:
+            raise ValueError(
+                f"task_cfg for '{args.task}' 未指定 num_classes，请在任务配置中明确设置"
+            )
+        args.num_classes = int(task_cfg["num_classes"])
     # ✅ 不改时间戳格式
     timestamp = datetime.now().strftime("%m-%d-%H-%M-%S")
     workdir = os.path.join(args.exp_root, args.exp_name, "train", timestamp)
@@ -196,6 +199,8 @@ def main():
         "preprocessed_root": args.preprocessed_root,  # 方便你对齐目录
         "repeats": int(args.repeats),
         "resume": args.resume,
+        "early_ratios": list(args.early_ratios),
+        "late_ratios": list(args.late_ratios),
     }
     save_json(config, workdir, "config")
 

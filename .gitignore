@@ -8,3 +8,11 @@ venv/
 *.log
 *.db
 .DS_Store
+*.pt
+*.pth
+*.nii.gz
+*.nii
+*.pt.tar
+experiments/
+stage2_crops/
+nohup.out

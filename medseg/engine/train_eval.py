@@ -10,22 +10,26 @@ from monai.inferers.utils import sliding_window_inference
 
 from monai.losses.tversky import TverskyLoss
 
-import numpy as np
 
-
-def get_foreground_mask(
-    label, min_tumor_vox=100
-):  # 最少的肿瘤体素数,用于判断是否为前景
-    """
-    创建前景区域的掩膜.
-    """
-    tumor_vox = int((label == 2).sum())  # 2是肿瘤的标签
-    if tumor_vox >= min_tumor_vox:
-        # 有足够的肿瘤体素,返回整个前景区域
-        return label > 0  # 返回所有前景部分(背景 label = 0)
-    else:
-        # 如果肿瘤体素太少,就用整个背景
-        return np.zeros_like(label, dtype=bool)  # 返回一个全零的掩膜,表示背景
+def _debug_batch_type(batch):
+    """打印 batch 的类型结构，仅用于第一个 batch 的调试"""
+    print("type(batch) =", type(batch))
+    if isinstance(batch, dict):
+        print("batch.keys() =", batch.keys())
+        return
+    if not isinstance(batch, list):
+        return
+    print("len(batch) =", len(batch))
+    if not batch:
+        return
+    first = batch[0]
+    print("type(batch[0]) =", type(first))
+    if isinstance(first, dict):
+        print("batch[0].keys() =", first.keys())
+    elif isinstance(first, list):
+        print("len(batch[0]) =", len(first))
+        if first:
+            print("type(batch[0][0]) =", type(first[0]))
 
 
 def train_one_epoch(
@@ -38,10 +42,13 @@ def train_one_epoch(
     epoch=None,
     epochs=None,
 ):
+    """
+    alpha:weight of the false positives
+    beta:weight of the false negatives
+    """
     model.train()
-    alpha = 0.8
-    beta = 0.2
-
+    alpha = 0.3
+    beta = 0.7
 
     if loss_type == "dicece":
         loss_fn = DiceCELoss(include_background=False, to_onehot_y=True, softmax=True)
@@ -66,10 +73,12 @@ def train_one_epoch(
     elif loss_type == "focaltversky":
         try:
             loss_fn = TverskyLoss(
+                include_background=False,
                 to_onehot_y=True,
                 softmax=True,
                 alpha=alpha,
                 beta=beta,
+                gamma=0.75,
                 # 如果你的 monai 不支持,会走 except
             )
         except TypeError:
@@ -92,21 +101,9 @@ def train_one_epoch(
     # 使用print直接显示 epoch 和训练进度
     print(f"Epoch {epoch}/{epochs} training:")
 
-    for it, batch in enumerate(loader, start=1):
-        if it == 1:
-            print("type(batch) =", type(batch))
-            if isinstance(batch, list):
-                print("len(batch) =", len(batch))
-                print("type(batch[0]) =", type(batch[0]))
-                if len(batch) > 0 and isinstance(batch[0], list):
-                    print("len(batch[0]) =", len(batch[0]))
-                    if len(batch[0]) > 0:
-                        print("type(batch[0][0]) =", type(batch[0][0]))
-                elif len(batch) > 0 and isinstance(batch[0], dict):
-                    print("batch[0].keys() =", batch[0].keys())
-            elif isinstance(batch, dict):
-                print("batch.keys() =", batch.keys())
-
+    for step, batch in enumerate(loader, start=1):
+        if step == 1:
+            _debug_batch_type(batch)
         while isinstance(batch, list):
             batch = batch[0]
         x = batch["image"].to(device)
@@ -116,13 +113,13 @@ def train_one_epoch(
         y = y.long().to(device)
 
         # 可选:只在前5个batch打印label情况(避免刷屏)
-        if it <= 5:
+        if step <= 5:
             yy = y[:, 0]
             u = torch.unique(yy).detach().cpu().tolist()
             tumor_vox = int((yy == 2).sum().item())
             liver_vox = int((yy == 1).sum().item())
             print(
-                f"[debug] batch {it}: unique={u} tumor_vox={tumor_vox} liver_vox={liver_vox}"
+                f"[debug] batch {step}: unique={u} tumor_vox={tumor_vox} liver_vox={liver_vox}"
             )
 
         optimizer.zero_grad(set_to_none=True)
@@ -143,8 +140,8 @@ def train_one_epoch(
         running += float(loss.item())
 
         # 每20个batch打印一次loss,控制输出频率
-        if it % 20 == 0:
-            print(f"[train] it={it}/{len(loader)} loss={float(loss.item()):.4f}")
+        if step % 10 == 0:
+            print(f"[train] step={step}/{len(loader)} loss={float(loss.item()):.4f}")
 
     # 计算并返回当前epoch的平均loss
     return running / max(1, n)
@@ -160,6 +157,10 @@ def validate_sliding_window(
     overlap=0.5,
     return_per_class=True,
 ):
+    """
+    logits shape:[1,3,D,H,W],3是类别数
+
+    """
 
     model.eval()
 
@@ -188,6 +189,7 @@ def validate_sliding_window(
                 predictor=model,
                 overlap=overlap,
             )
+
             assert isinstance(logits, torch.Tensor)
 
             pred = torch.argmax(logits, dim=1)
@@ -195,8 +197,8 @@ def validate_sliding_window(
             dices = []
 
             for c in class_ids:
-                p = pred == c
-                g = y == c
+                p = pred == c  # 预测中属于类别 c 的体素
+                g = y == c  # 标签中属于类别 c 的体素
 
                 inter = (p & g).sum(dim=(1, 2, 3)).double()
                 denom = p.sum(dim=(1, 2, 3)).double() + g.sum(dim=(1, 2, 3)).double()
@@ -219,6 +221,6 @@ def validate_sliding_window(
 
     return {
         "mean_fg": mean_fg,
-        "per_class": [float(x) for x in per_class],
+        "per_class": [float(x) for x in per_class] if return_per_class else [],
         "class_ids": class_ids,
     }
