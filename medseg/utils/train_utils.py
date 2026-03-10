@@ -1,0 +1,118 @@
+import random
+import numpy as np
+import torch
+import os
+from medseg.data.msd import load_msd_dataset, fixed_split
+from medseg.data.dataset_offline import load_pt_paths, split_pt_paths
+
+from medseg.data.build_loader import build_loaders, build_loaders_offline
+
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+def get_stage_ratios(epoch: int, epochs: int):
+    """
+    分阶段采样策略:
+    前 1/3 epoch:以 liver 为主,让模型先学会找肝脏
+    后 2/3 epoch:增加 tumor 比例,精细化肿瘤分割
+    """
+    cut = int(epochs / 3)
+    if epoch <= cut:
+        return (0.0, 0.7, 0.3)
+    else:
+        return (0.0, 0.4, 0.6)
+
+
+def build_metrics(best, best_epoch, best_c1, best_c2,
+                  total_sec, epochs, n_train, n_val):
+    """训练结束后整理最终指标,返回 dict"""
+    return {
+        "best_score":        round(float(best), 4),
+        "best_epoch":        int(best_epoch),
+        "best_liver_dice":   None if best_c1 is None else round(float(best_c1), 4),
+        "best_tumor_dice":   None if best_c2 is None else round(float(best_c2), 4),
+        "total_train_hours": round(total_sec / 3600.0, 2),
+        "epochs":            int(epochs),
+        "n_train_cases":     int(n_train),
+        "n_val_cases":       int(n_val),
+    }
+
+
+def build_report(metrics: dict) -> str:
+    """把 metrics dict 格式化成人可读的 report 字符串"""
+    lines = [
+        f"best_epoch:       {metrics['best_epoch']}",
+        f"best_liver_dice:  {metrics['best_liver_dice']}",
+        f"best_tumor_dice:  {metrics['best_tumor_dice']}",
+        f"best_score:       {metrics['best_score']}",
+        f"n_train_cases:    {metrics['n_train_cases']}",
+        f"n_val_cases:      {metrics['n_val_cases']}",
+        f"total_train_hours:{metrics['total_train_hours']}",
+    ]
+    return "\n".join(lines)
+
+
+
+
+def load_data(args):
+    """
+    根据是否传入 preprocessed_root 自动选择离线/在线模式
+    返回 (tr, va, use_offline)
+    离线模式返回路径列表,在线模式返回字典列表
+    """
+    use_offline = args.preprocessed_root is not None
+
+    if use_offline:
+        print(f"[离线模式] 读取 .pt 文件: {args.preprocessed_root}")
+        all_pt = load_pt_paths(args.preprocessed_root)
+        tr, va = split_pt_paths(all_pt, val_ratio=args.val_ratio, seed=args.seed)
+        if args.train_n and args.train_n > 0:
+            tr = tr[: args.train_n]
+        if args.val_n and args.val_n > 0:
+            va = va[: args.val_n]
+    else:
+        print(f"[在线模式] 读取 .nii.gz: {args.data_root}")
+        train_items, _ = load_msd_dataset(args.data_root)
+        tr, va = fixed_split(train_items, val_ratio=args.val_ratio, seed=args.seed)
+        if args.train_n and args.train_n > 0:
+            tr = tr[: args.train_n]
+        if args.val_n and args.val_n > 0:
+            va = va[: args.val_n]
+        tr_ids = {os.path.basename(x["image"]) for x in tr}
+        va_ids = {os.path.basename(x["image"]) for x in va}
+        assert len(tr_ids & va_ids) == 0, "train/val overlap!"
+
+    print(f"训练: {len(tr)}  验证: {len(va)}")
+    return tr, va, use_offline
+
+
+
+
+def build_loaders_auto(args, tr, va, use_offline, ratios):
+    """
+    根据 use_offline 自动选择离线/在线 loader
+    """
+    if use_offline:
+        return build_loaders_offline(
+            tr, va,
+            patch_size=tuple(args.patch),
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            train_ratios=ratios,
+            prefetch_factor=args.prefetch_factor,
+            repeats=args.repeats,
+        )
+    else:
+        return build_loaders(
+            tr, va,
+            patch_size=tuple(args.patch),
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            cache_rate=args.cache_rate,
+            train_ratios=ratios,
+            prefetch_factor=args.prefetch_factor,
+        )

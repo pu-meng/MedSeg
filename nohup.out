@@ -1,0 +1,13 @@
+usage: train.py [-h] [--task {heart,liver}] [--data_root DATA_ROOT]
+                [--num_classes NUM_CLASSES] [--train_n TRAIN_N]
+                [--val_n VAL_N] [--exp_root EXP_ROOT] --exp_name EXP_NAME
+                [--model MODEL] [--epochs EPOCHS] [--batch_size BATCH_SIZE]
+                [--lr LR] [--val_ratio VAL_RATIO] [--patch PATCH PATCH PATCH]
+                [--num_workers NUM_WORKERS] [--cache_rate CACHE_RATE] [--amp]
+                [--sw_batch_size SW_BATCH_SIZE] [--seed SEED]
+                [--loss {dicece,dicefocal,tversky,focaltversky}]
+                [--val_every VAL_EVERY]
+                [--preprocessed_root PREPROCESSED_ROOT] [--overlap OVERLAP]
+                [--prefetch_factor PREFETCH_FACTOR] [--repeats REPEATS]
+                [--resume RESUME]
+train.py: error: the following arguments are required: --exp_name
