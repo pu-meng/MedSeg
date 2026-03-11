@@ -17,6 +17,8 @@ def save_cmd(out_dir: str, filename: str = "cmd.txt") -> str:
     """
     path = os.path.join(out_dir, filename)
     args = sys.argv[1:]
+    cuda = os.environ.get("CUDA_VISIBLE_DEVICES", None)
+    cuda_prefix = f"CUDA_VISIBLE_DEVICES={cuda} " if cuda is not None else ""
 
     # 按 -- 开头分组：每遇到新flag就开一个新组
     groups = []
@@ -32,7 +34,7 @@ def save_cmd(out_dir: str, filename: str = "cmd.txt") -> str:
         groups.append(cur)
 
     with open(path, "w", encoding="utf-8") as f:
-        f.write(sys.argv[0] + " \\\n")
+        f.write(f"{cuda_prefix}python -m scripts.train \\\n")
         for i, grp in enumerate(groups):
             line = " ".join(grp)
             end = " \\\n" if i < len(groups) - 1 else "\n"
