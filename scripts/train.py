@@ -80,10 +80,15 @@ def parse_args():
         help="仅使用前N个验证样本进行快速调试(0=全部)",
     )
 
-    p.add_argument("--exp_root", type=str, default=None)
+    p.add_argument("--exp_root", type=str, default=DEFAULT_EXP_ROOT)
     p.add_argument("--exp_name", type=str, required=True)
 
-    p.add_argument("--model", type=str, default="unet3d")
+    p.add_argument(
+        "--model",
+        type=str,
+        required=True,
+        help="模型名称,如 unet, unetr, attention_unet(attunet)",
+    )
     p.add_argument("--epochs", type=int, default=200)
     p.add_argument("--batch_size", type=int, default=2)
     p.add_argument("--lr", type=float, default=1e-4)
