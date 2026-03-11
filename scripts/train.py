@@ -81,12 +81,17 @@ def parse_args():
     )
 
     p.add_argument("--exp_root", type=str, default=DEFAULT_EXP_ROOT)
-    p.add_argument("--exp_name", type=str, required=True)
+    p.add_argument(
+        "--exp_name",
+        type=str,
+        default="debug",
+        help="实验名称,会保存在 exp_root/exp_name/ 下",
+    )
 
     p.add_argument(
         "--model",
         type=str,
-        required=True,
+        default="unet3d",
         help="模型名称,如 unet, unetr, attention_unet(attunet)",
     )
     p.add_argument("--epochs", type=int, default=200)
