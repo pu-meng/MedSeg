@@ -1,7 +1,7 @@
 """
 calc_ratios.py
 统计 Task03_Liver_0p88mm 各类别体素占比,推荐 RandCropByLabelClassesd 的 ratios
-用法:python calc_ratios.py --data_root /path/to/Task03_Liver_0p88mm
+用法:python calc_ratios.py --data_root /home/pumengyu/Task03_Liver
 """
 
 import os

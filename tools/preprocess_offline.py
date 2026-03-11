@@ -1,15 +1,17 @@
 """
 preprocess_offline.py
 =====================
-离线预处理:在已有的 0.88mm 数据集基础上,做:
-  1. 强度归一化(CT肝脏窗口)
-  2. 前景裁剪(CropForeground)
-  3. 保存为 .pt 文件(torch tensor,直接训练读取)
+离线预处理:对原始 Task03_Liver 数据集做全套确定性预处理:
+  1. 方向统一(Orientationd → RAS)
+  2. spacing 重采样(Spacingd → 0.88mm 各向同性)
+  3. 强度归一化(CT 肝脏窗口 → [0,1])
+  4. 前景裁剪(CropForegroundd,去掉大量空气)
+  5. 保存为 .pt 文件(torch tensor,训练时直接读取)
 
 使用方式:
-  python preprocess_offline.py \
-    --src /home/pumengyu/.../Task03_Liver_0.88mm \
-    --dst /home/pumengyu/.../Task03_Liver_0.88mm_preprocessed \
+  python tools/preprocess_offline.py \
+    --data_root /home/pumengyu/Task03_Liver \
+    --out_dir   /home/pumengyu/Task03_Liver_pt \
     --num_workers 4
 
 训练时 transforms 只需保留随机增强部分,速度大幅提升.
@@ -25,30 +27,35 @@ from monai.transforms import (
     Compose,
     LoadImaged,
     EnsureChannelFirstd,
+    Orientationd,
+    Spacingd,
     ScaleIntensityRanged,
     CropForegroundd,
     EnsureTyped,
 )
 from monai.data import Dataset, DataLoader
 
-# ── CT 肝脏窗口(与 build_transforms.py 保持一致)──────────────────────────
+# ── CT 肝脏窗口(与 transforms.py 保持一致)────────────────────────────────
 LIVER_WIN_MIN = -13.7
 LIVER_WIN_MAX = 188.3
+
+# ── target spacing(与 transforms.py 保持一致)─────────────────────────────
+TARGET_SPACING = (0.88, 0.88, 0.88)
 
 
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument(
-        "--src",
+        "--data_root",
         type=str,
-        default="/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task03_Liver_0.88mm",
-        help="输入数据集根目录(已完成 spacing 预处理的 .nii.gz)",
+        default="/home/pumengyu/Task03_Liver",
+        help="原始数据集根目录(含 imagesTr/ 和 labelsTr/)",
     )
     p.add_argument(
-        "--dst",
+        "--out_dir",
         type=str,
-        default="/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task03_Liver_0.88mm_preprocessed",
-        help="输出目录,保存 .pt 文件",
+        default="/home/pumengyu/Task03_Liver_pt",
+        help="输出目录,保存预处理后的 .pt 文件",
     )
     p.add_argument(
         "--num_workers", type=int, default=0, help="DataLoader workers,先用0保证跑通"
@@ -61,12 +68,23 @@ def build_transforms():
     """
     只做确定性操作,不做任何随机增强.
     随机增强留给训练时在线做.
+
+    pipeline 与 transforms.py 的在线流程完全对齐:
+      Orientationd → Spacingd → ScaleIntensityRanged → CropForegroundd
     """
     return Compose(
         [
             LoadImaged(keys=["image", "label"]),
             EnsureChannelFirstd(keys=["image", "label"]),
-            # 强度归一化:CT肝脏窗口 → [0, 1]
+            # 统一方向:RAS(与在线 transforms.py 一致)
+            Orientationd(keys=["image", "label"], axcodes="RAS"),
+            # spacing 重采样:原始 CT 体素 → 0.88mm 各向同性
+            Spacingd(
+                keys=["image", "label"],
+                pixdim=TARGET_SPACING,
+                mode=("bilinear", "nearest"),
+            ),
+            # 强度归一化:CT 肝脏窗口 → [0, 1]
             ScaleIntensityRanged(
                 keys=["image"],
                 a_min=LIVER_WIN_MIN,
@@ -90,14 +108,15 @@ def main():
     args = parse_args()
 
     # ── 输出目录 ──────────────────────────────────────────────────────────
-    os.makedirs(args.dst, exist_ok=True)
-    print(f"src : {args.src}")
-    print(f"dst : {args.dst}")
+    os.makedirs(args.out_dir, exist_ok=True)
+    print(f"data_root : {args.data_root}")
+    print(f"out_dir   : {args.out_dir}")
+    print(f"spacing   : {TARGET_SPACING}")
 
     # ── 收集待处理样本 ────────────────────────────────────────────────────
-    img_paths = sorted(glob.glob(os.path.join(args.src, "imagesTr", "*.nii.gz")))
+    img_paths = sorted(glob.glob(os.path.join(args.data_root, "imagesTr", "*.nii.gz")))
     if len(img_paths) == 0:
-        raise FileNotFoundError(f"在 {args.src}/imagesTr 下没找到 .nii.gz 文件")
+        raise FileNotFoundError(f"在 {args.data_root}/imagesTr 下没找到 .nii.gz 文件")
 
     items = []
     skipped = 0
@@ -105,12 +124,12 @@ def main():
         name = os.path.splitext(os.path.splitext(os.path.basename(ip))[0])[
             0
         ]  # 去掉 .nii.gz
-        lp = os.path.join(args.src, "labelsTr", os.path.basename(ip))
+        lp = os.path.join(args.data_root, "labelsTr", os.path.basename(ip))
         if not os.path.exists(lp):
             print(f"[WARN] label 不存在,跳过: {lp}")
             continue
 
-        out_pt = os.path.join(args.dst, f"{name}.pt")
+        out_pt = os.path.join(args.out_dir, f"{name}.pt")
         if os.path.exists(out_pt) and not args.overwrite:
             skipped += 1
             continue
@@ -142,21 +161,15 @@ def main():
         img = batch["image"][0]  # torch.float32, shape [1, D, H, W]
         lab = batch["label"][0]  # torch.int64,   shape [1, D, H, W]
 
-        out_pt = os.path.join(args.dst, f"{name}.pt")
+        out_pt = os.path.join(args.out_dir, f"{name}.pt")
         torch.save({"image": img, "label": lab}, out_pt)
 
         d, h, w = img.shape[1], img.shape[2], img.shape[3]
         print(f"[{i+1}/{len(items)}] {name}  shape=({d},{h},{w})  -> {out_pt}")
 
     print("\n✅ 全部处理完成!")
-    print(f"共保存 {len(items)} 个 .pt 文件到: {args.dst}")
-    print()
-    print("── 下一步 ──────────────────────────────────────────────────────")
-    print("训练时 build_train_transforms 只保留随机增强部分:")
-    print("  RandFlipd / RandRotate90d / RandCropByLabelClassesd")
-    print("  RandGaussianNoised / RandAdjustContrastd 等")
-    print("去掉 LoadImaged / ScaleIntensityRanged / CropForegroundd")
-    print("改用自定义 Dataset 直接 torch.load() 读取 .pt 文件即可.")
+    print(f"共保存 {len(items)} 个 .pt 文件到: {args.out_dir}")
+
 
 
 if __name__ == "__main__":

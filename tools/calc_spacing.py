@@ -2,7 +2,7 @@
 calc_spacing.py
 统计原始 Task03_Liver 数据集的 spacing 分布
 输出:median spacing,用于决定预处理的 target spacing
-用法:python calc_spacing.py --data_root /path/to/Task03_Liver
+用法:python calc_spacing.py --data_root /home/pumengyu/Task03_Liver
 """
 
 import os
@@ -11,14 +11,14 @@ import argparse
 import numpy as np
 import nibabel as nib
 from tqdm import tqdm
-# /home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task03_Liver
+# /home/pumengyu/Task03_Liver
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument(
         "--data_root",
         type=str,
-        default="/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task03_Liver",
+        default="/home/pumengyu/Task03_Liver",
     )
     args = p.parse_args()
 

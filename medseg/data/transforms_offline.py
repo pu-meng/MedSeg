@@ -3,23 +3,8 @@ transforms_offline.py
 =====================
 适配离线预处理后的 .pt 文件.
 
-离线已做(不需要再做):
-  ✅ LoadImaged
-  ✅ EnsureChannelFirstd
-  ✅ ScaleIntensityRanged(归一化)
-  ✅ CropForegroundd(前景裁剪)
-
-训练时只做随机增强(在线):
-  ✅ SpatialPadd
-  ✅ RandCropByLabelClassesd
-  ✅ RandFlipd
-  ✅ RandRotate90d
-  ✅ RandRotated
-  ✅ RandZoomd
-  ✅ RandGaussianNoised
-  ✅ RandGaussianSmoothd
-  ✅ RandAdjustContrastd
-  ✅ RandScaleIntensityd
+在线模式：每次加载代价搞，num_samples=4
+离线模式：预处理好，直接切 patch，num_samples=1，，repeats=3,速度大幅提升.
 
 验证时不做任何增强(离线已处理好,直接用).
 """
@@ -34,6 +19,7 @@ from monai.transforms import (
     RandAdjustContrastd,
     RandScaleIntensityd,
     EnsureTyped,
+
 )
 from monai.transforms import SpatialPadd
 
@@ -54,7 +40,7 @@ def build_train_transforms(patch_size=(144, 144, 144), ratios=(0.0, 0.05, 0.95))
                 label_key="label",
                 spatial_size=patch_size,
                 num_classes=3,  # 0=bg, 1=liver, 2=tumor
-                num_samples=1,  # 每个病例切4个patch
+                num_samples=1,  # 每个病例切1个patch
                 ratios=list(ratios),  # tumor占更大比例
                 allow_smaller=True,
             ),
