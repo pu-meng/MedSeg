@@ -34,7 +34,7 @@ from medseg.utils.ckpt import save_ckpt
 from medseg.tasks import get_task
 
 from medseg.utils.train_logger import TrainLogger
-
+from pathlib import Path
 # ✅ 新增:统一输出工具
 from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
 
@@ -47,8 +47,25 @@ DEFAULT_EXP_ROOT = "/home/pumengyu/experiments"
 
 
 def short(path, keep=3):
-    """只显示路径最后keep段"""
-    parts = path.replace("\\", "/").split("/")
+    """
+    path:输入路径
+    keep:保留几段路径
+  
+    Linux:/home/pumengyu/Desktop/medseg
+    所以要先统一成/
+    parts=['','home','user'];
+    Path(path).parts=['C:','Users','pumengyu'];
+    from pathlib import Path
+    Path("C:/Users/pumengyu/Desktop/medseg").parts=['C:','Users','pumengyu']
+    Path的返回对象是Path对象,自动适配Windows/Linux,
+    可以直接.name和.parent,.exists()等操作;
+    parts的意思:把路径按/分割成列表,返回元组
+    Path对象有,.suffix返回后缀,.parent返回父目录等
+
+
+    """
+
+    parts = Path(path).parts
     return "/".join(parts[-keep:])
 
 
@@ -96,7 +113,7 @@ def parse_args():
     )
     p.add_argument("--epochs", type=int, default=200)
     p.add_argument("--batch_size", type=int, default=2)
-    p.add_argument("--lr", type=float, default=1e-4)
+    p.add_argument("--lr", type=float, default=1e-2)
     p.add_argument("--val_ratio", type=float, default=0.2)
     p.add_argument("--patch", type=int, nargs=3, default=[144, 144, 144])
     p.add_argument("--num_workers", type=int, default=4)
@@ -110,7 +127,7 @@ def parse_args():
         default="dicece",
         choices=["dicece", "dicefocal", "tversky", "focaltversky"],
     )
-    p.add_argument("--val_every", type=int, default=4)
+    p.add_argument("--val_every", type=int, default=5)
     p.add_argument(
         "--preprocessed_root",
         type=str,
@@ -149,12 +166,20 @@ def parse_args():
     )
     p.add_argument("--test_ratio", type=float, default=0.1)
 
+    p.add_argument("--val_patch", type=int, nargs=3, default=None,
+               help="验证滑窗roi_size；不传则默认等于patch")
+
     return p.parse_args()
 
 
 def main():
+    """
+    args=parse_args()等价于,先运行这个函数,再运行后面的代码
+    """
     start_time = time.time()
     args = parse_args()
+    if args.val_patch is None:
+        args.val_patch = args.patch
     set_seed(args.seed)
 
     task_cfg = get_task(args.task)
@@ -213,13 +238,17 @@ def main():
         "resume": args.resume,
         "early_ratios": list(args.early_ratios),
         "late_ratios": list(args.late_ratios),
+        "optimizer": "SGD",
+        "momentum": 0.99,
+        "weight_decay": 3e-5,
+        "lr_scheduler": "poly_0.9",
     }
     save_json(config, workdir, "config")
 
     # 数据加载与 split
     # 数据加载:离线 .pt 或原来的 .nii.gz
     # 这个地方用到val_ratio，所以不能放在load_data之前
-    tr, va,te, use_offline = load_data(args)
+    tr, va, te, use_offline = load_data(args)
 
     # model/optim
     model = build_model(
@@ -229,8 +258,13 @@ def main():
         img_size=tuple(args.patch),
     ).to(device)
 
-    optim = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
-
+    optim = torch.optim.SGD(
+        model.parameters(), lr=args.lr, momentum=0.99, nesterov=True, weight_decay=3e-5
+    )
+    # optim 下面加
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optim, lr_lambda=lambda epoch: (1 - epoch / args.epochs) ** 0.9
+    )
     scaler = torch.amp.GradScaler() if (args.amp and device == "cuda") else None
 
     logger = TrainLogger(workdir)
@@ -243,6 +277,8 @@ def main():
         start_epoch = ckpt["epoch"] + 1
         best = ckpt["best_metric"]  # ← 注意是 best_metric
         print(f"resume 从 epoch {ckpt['epoch']} 继续, best={best:.4f}")
+        for _ in range(ckpt["epoch"]):
+            scheduler.step()
 
     best_epoch = -1
     best_c1 = None
@@ -298,7 +334,7 @@ def main():
                 model,
                 val_loader,
                 device,
-                roi_size=tuple(args.patch),
+                roi_size=tuple(args.val_patch),
                 sw_batch_size=int(args.sw_batch_size),
                 num_classes=int(args.num_classes),
                 return_per_class=True,
@@ -319,6 +355,7 @@ def main():
         # last.pt:固定频率保存,和 best 无关
 
         save_ckpt(os.path.join(workdir, "last.pt"), model, optim, epoch, best)
+        scheduler.step()
 
         # 日志:建议每个 epoch 都写,至少能看训练是否“在动”
         lr = float(optim.param_groups[0]["lr"])

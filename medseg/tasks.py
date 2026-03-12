@@ -7,13 +7,13 @@
 TASKS = {
     # MSD Task02_Heart
     "heart": {
-        "data_root": "/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task02_Heart",
+        "data_root": "/home/pumengyu/Task02_Heart",
         "num_classes": 2,  # 0=bg, 1=heart
         "class_names": ["bg", "heart"],
     },
     # MSD Task03_Liver (Liver + Tumor)
     "liver": {
-        "data_root": "/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task03_Liver",
+        "data_root": "/home/pumengyu/Task03_Liver",
         "num_classes": 3,  # 0=bg, 1=liver, 2=tumor
         "class_names": ["bg", "liver", "tumor"],
     },

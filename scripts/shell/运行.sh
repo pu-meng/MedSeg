@@ -1,0 +1,21 @@
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
+  --task liver \
+  --exp_name dynunet_v1_sgd \
+  --model dynunet \
+  --data_root /home/pumengyu/Task03_Liver \
+  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --num_classes 3 \
+  --epochs 300 \
+  --batch_size 1 \
+  --lr 0.01 \
+  --patch 144 144 144 \
+  --val_patch 96 96 96 \
+  --sw_batch_size 1 \
+  --val_every 6 \
+  --num_workers 2 \
+  --cache_rate 0.0 \
+  --amp \
+  --loss dicece \
+  --overlap 0.5 \
+  --prefetch_factor 4 \
+  --repeats 3

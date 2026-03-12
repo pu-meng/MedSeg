@@ -41,6 +41,8 @@ def build_loaders(
     # ✅ 动态 ratios 的时候,强制 train 不缓存(否则 ratios 不生效)
   
     train_tf = build_train_transforms(patch_size, ratios=train_ratios)
+    
+    
     val_tf = build_val_transforms()
 
     train_ds = CacheDataset(
