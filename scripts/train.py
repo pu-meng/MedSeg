@@ -294,7 +294,7 @@ def main():
     train_loader, val_loader = build_loaders_auto(
         args, tr, va, use_offline, init_ratios
     )
-    current_ratios = init_ratios
+    current_train_ratios = init_ratios
 
     for epoch in range(start_epoch, args.epochs + 1):
         t0 = time.time()
@@ -302,17 +302,17 @@ def main():
         print(f"Epoch {epoch}/{args.epochs}")
 
         # ✅ 分阶段 ratios:每个 epoch 动态创建 train_loader
-        new_ratios = get_stage_ratios(
+        new_train_ratios = get_stage_ratios(
             epoch, args.epochs, tuple(args.early_ratios), tuple(args.late_ratios)
         )
-        print(f"[epoch {epoch}] crop ratios={new_ratios}")
-        if new_ratios != current_ratios:
-            current_ratios = new_ratios
+        print(f"[epoch {epoch}] crop ratios={new_train_ratios}")
+        if new_train_ratios != current_train_ratios:
+            current_train_ratios = new_train_ratios
             print(
-                f"更新采样比例为 {current_ratios},重新缓存+重新创建 train_loader(val_loader 不变)"
+                f"更新采样比例为 {current_train_ratios},重新缓存+重新创建 train_loader(val_loader 不变)"
             )
             train_loader, _ = build_loaders_auto(
-                args, tr, va, use_offline, current_ratios
+                args, tr, va, use_offline, current_train_ratios
             )
         train_loss = train_one_epoch(
             model,

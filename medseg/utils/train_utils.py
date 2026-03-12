@@ -96,7 +96,7 @@ def load_data(args):
     return tr, va, te, use_offline
 
 
-def build_loaders_auto(args, tr, va, use_offline, ratios):
+def build_loaders_auto(args, tr, va, use_offline, train_ratios):
     """
     根据 use_offline 自动选择离线/在线 loader
     """
@@ -107,7 +107,7 @@ def build_loaders_auto(args, tr, va, use_offline, ratios):
             patch_size=tuple(args.patch),
             batch_size=args.batch_size,
             num_workers=args.num_workers,
-            train_ratios=ratios,
+            train_ratios=train_ratios,
             prefetch_factor=args.prefetch_factor,
             repeats=args.repeats,
         )
@@ -119,7 +119,7 @@ def build_loaders_auto(args, tr, va, use_offline, ratios):
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             cache_rate=args.cache_rate,
-            train_ratios=ratios,
+            train_ratios=train_ratios,
             prefetch_factor=args.prefetch_factor,
         )
 

@@ -5,6 +5,14 @@ from torch.utils.data import Dataset
 import warnings
 
 from monai.transforms import RandCropByLabelClassesd 
+"""
+dataset_offline.py
+负责离线.pt数据的读取和划分,
+输入: .pt 文件路径列表
+事故出:可供DataLoader使用的offlineDataset
+"""
+
+
 class OfflineDataset(Dataset):
     """
     读取 preprocess_offline.py 生成的 .pt 文件.
@@ -14,6 +22,28 @@ class OfflineDataset(Dataset):
             "image": torch.float32 tensor [1, D, H, W],
             "label": torch.int64   tensor [1, D, H, W],
         }
+    case_idx = idx % len(self.pt_paths)
+    这行代码类似len(self.pt_paths)=100,那么idx=190,case_idx=90;
+    这行是为了让dataset可以重复访问同一批pt文件.
+
+    with是最重要的Python语法,它用于简化代码,提高代码的可读性.
+    with something():
+        do something
+    进入某个环境,执行代码,退出环境
+    self.pt_paths[case_idx]是取出第case_idx个.pt文件路径
+    map_location="cpu"强制把数据加载到CPU
+    mmap=True,不要把整个文件都读入内存,只在需要时候读取
+
+    python对象->torch.save()->.pt文件
+    .pt文件->torch.load()->python对象
+
+    对象=一块带类型的数据
+    python对象=一块带类型的数据+类型信息
+    对象=数据+类型信息+能做的操作
+     
+     Dataset应该只返回一个sample,允许返回list,但是最多只能返回一个sample
+     不然会带来混乱.
+
     """
 
     def __init__(self, pt_paths: list, transform=None, repeats=1):
@@ -53,7 +83,26 @@ class OfflineDataset(Dataset):
 
         return data
     def set_ratios(self, ratios):
-        """动态修改采样比例,不重建 loader"""
+        """
+        在transform里面找到RandCropByLabelClassesd,
+        然后修改它的ratios参数
+        这里的self.transform是Compose
+        Compose([
+        LoadImaged(...),
+        Orientationd(...),
+        Spacingd(...),
+        ])
+        self.transform.transforms一个列表
+        [LoadImaged(...),Orientationd(...),Spacingd(...),]
+        for t in self.transform.transforms:的意思是把pipline的每个transform取出来
+        这个return是因为self.transform只有一个RandCropByLabelClassesd
+        所以return一次就结束了
+
+        pipeline是管道的意思,把数据从输入到输出,经过一系列的transform
+        
+
+
+        """
         for t in self.transform.transforms:
             if isinstance(t, RandCropByLabelClassesd):
                 t.ratios = list(ratios)
