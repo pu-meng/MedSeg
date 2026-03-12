@@ -92,7 +92,7 @@ def load_data(args):
         va_ids = {os.path.basename(x["image"]) for x in va}
         assert len(tr_ids & va_ids) == 0, "train/val overlap!"
 
-    print(f"训练: {len(tr)}  验证: {len(va)},测实: {len(te)}")
+    print(f"训练: {len(tr)}  验证: {len(va)},测试: {len(te)}")
     return tr, va, te, use_offline
 
 

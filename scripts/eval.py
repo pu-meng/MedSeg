@@ -5,7 +5,7 @@ import argparse
 import torch
 
 from medseg.utils.io_utils import save_cmd, save_json, save_report
-from medseg.data.msd import load_msd_dataset, fixed_split
+from medseg.data.msd import load_msd_dataset
 from medseg.data.build_loader import build_loaders
 from medseg.models.build_model import build_model
 from medseg.engine.train_eval import validate_sliding_window
@@ -150,7 +150,7 @@ def build_val_loader(args):
 
     print(f"[在线模式] 读取 .nii.gz: {args.data_root}")
     items, _ = load_msd_dataset(args.data_root)
-    items, _ = load_msd_dataset(args.data_root)
+    
     _, _, te = split_three_ways(
         items, test_ratio=args.test_ratio, val_ratio=args.val_ratio, seed=args.seed
     )
@@ -258,7 +258,7 @@ def main():
 
     metrics_out = {
         "best_epoch": ckpt.get("epoch", "NA"),
-        "n_val_cases": int(n_cases) if n_cases is not None else None,
+        "n_test_cases": int(n_cases) if n_cases is not None else None,
         "total_infer_seconds": float(total_sec),
         "seconds_per_case": float(sec_per_case) if sec_per_case is not None else None,
         "val_dice_mean_foreground": float(val_mean),
@@ -270,7 +270,7 @@ def main():
         f"epoch: {metrics_out['best_epoch']}",
         f"val_dice_mean_foreground: {metrics_out['val_dice_mean_foreground']:.6f}",
         f"val_dice_per_class: {metrics_out['val_dice_per_class']} (class_ids={metrics_out['val_dice_class_ids']})",
-        f"n_val_cases: {metrics_out['n_val_cases']}",
+        f"n_test_cases: {metrics_out['n_test_cases']}",
         f"total_infer_seconds: {metrics_out['total_infer_seconds']:.2f}",
         f"seconds_per_case: {metrics_out['seconds_per_case']}",
     ]
