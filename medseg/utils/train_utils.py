@@ -2,9 +2,8 @@ import random
 import numpy as np
 import torch
 import os
-from medseg.data.msd import load_msd_dataset, fixed_split
-from medseg.data.dataset_offline import load_pt_paths, split_pt_paths
-
+from medseg.data.msd import load_msd_dataset
+from medseg.data.dataset_offline import load_pt_paths
 from medseg.data.build_loader import build_loaders, build_loaders_offline
 
 
@@ -71,7 +70,11 @@ def load_data(args):
     if use_offline:
         print(f"[离线模式] 读取 .pt 文件: {args.preprocessed_root}")
         all_pt = load_pt_paths(args.preprocessed_root)
-        tr, va = split_pt_paths(all_pt, val_ratio=args.val_ratio, seed=args.seed)
+
+        tr, va, te = split_three_ways(
+            all_pt, test_ratio=args.test_ratio, val_ratio=args.val_ratio, seed=args.seed
+        )
+
         if args.train_n and args.train_n > 0:
             tr = tr[: args.train_n]
         if args.val_n and args.val_n > 0:
@@ -79,7 +82,8 @@ def load_data(args):
     else:
         print(f"[在线模式] 读取 .nii.gz: {args.data_root}")
         train_items, _ = load_msd_dataset(args.data_root)
-        tr, va = fixed_split(train_items, val_ratio=args.val_ratio, seed=args.seed)
+        tr, va, te =split_three_ways(train_items,val_ratio=args.val_ratio, test_ratio=args.test_ratio, seed=args.seed)
+        
         if args.train_n and args.train_n > 0:
             tr = tr[: args.train_n]
         if args.val_n and args.val_n > 0:
@@ -88,8 +92,8 @@ def load_data(args):
         va_ids = {os.path.basename(x["image"]) for x in va}
         assert len(tr_ids & va_ids) == 0, "train/val overlap!"
 
-    print(f"训练: {len(tr)}  验证: {len(va)}")
-    return tr, va, use_offline
+    print(f"训练: {len(tr)}  验证: {len(va)},测实: {len(te)}")
+    return tr, va, te, use_offline
 
 
 def build_loaders_auto(args, tr, va, use_offline, ratios):
@@ -118,3 +122,23 @@ def build_loaders_auto(args, tr, va, use_offline, ratios):
             train_ratios=ratios,
             prefetch_factor=args.prefetch_factor,
         )
+
+
+def split_three_ways(
+    pt_paths: list, test_ratio: float = 0.1, val_ratio: float = 0.2, seed: int = 0
+):
+    import random
+
+    rng = random.Random(seed)
+    paths = pt_paths[:]
+    rng.shuffle(paths)
+
+    n_test = max(1, int(len(paths) * test_ratio))
+    n_val = max(1, int(len(paths) * val_ratio))
+
+    te = paths[-n_test:]  # 从末尾取 test
+    tr_va = paths[:-n_test]  # 剩余
+    va = tr_va[-n_val:]  # 再从末尾取 val
+    tr = tr_va[:-n_val]  # 剩余就是 train
+
+    return tr, va, te

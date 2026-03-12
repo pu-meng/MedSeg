@@ -13,13 +13,15 @@ from medseg.utils.ckpt import load_ckpt
 from medseg.utils.warnings import setup_warnings
 from medseg.tasks import get_task
 
+from medseg.data.build_loader import build_loaders_offline
+from medseg.data.dataset_offline import load_pt_paths
+from medseg.utils.train_utils import split_three_ways
+
 setup_warnings()
 
 # 你机器上的默认路径（自用省事）
-DEFAULT_DATA_ROOT = (
-    "/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task02_Liver_0.88mm"
-)
-DEFAULT_EXP_ROOT = "/home/pumengyu/First2TB/PuMengYu/CT/segmentation/experiments"
+DEFAULT_DATA_ROOT = "/home/pumengyu/Task03_Liver_pt"
+DEFAULT_EXP_ROOT = "/home/pumengyu/experiments"
 
 
 def pick_arg(cli_value, train_cfg, key, default=None, cast_fn=None):
@@ -52,6 +54,7 @@ def parse_args():
     p.add_argument("--model", type=str, default=None)
 
     p.add_argument("--val_ratio", type=float, default=None)
+    p.add_argument("--test_ratio", type=float, default=None)
     p.add_argument("--patch", type=int, nargs=3, default=None)
     p.add_argument("--sw_batch_size", type=int, default=None)
     p.add_argument("--overlap", type=float, default=None)
@@ -78,6 +81,7 @@ def load_train_config(train_config_path):
     if os.path.isfile(train_config_path):
         with open(train_config_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
+            # 把文件里面的json文本解析成Python对象，cfg是一个dict
         print("Loaded train config:", train_config_path)
         return cfg
     return {}
@@ -92,6 +96,7 @@ def resolve_args(args, train_cfg, task_cfg):
     )
 
     args.val_ratio = pick_arg(args.val_ratio, train_cfg, "val_ratio", 0.2, float)
+    args.test_ratio = pick_arg(args.test_ratio, train_cfg, "test_ratio", 0.1, float)
     args.seed = pick_arg(args.seed, train_cfg, "seed", 0, int)
 
     args.patch = pick_arg(
@@ -119,6 +124,7 @@ def resolve_args(args, train_cfg, task_cfg):
     print(f"  val_ratio={args.val_ratio}")
     print(f"  seed={args.seed}")
     print(f"  preprocessed_root={args.preprocessed_root}")
+    print(f"test_ratio={args.test_ratio}")
 
     return args
 
@@ -126,35 +132,39 @@ def resolve_args(args, train_cfg, task_cfg):
 def build_val_loader(args):
     if args.preprocessed_root:
         print(f"[离线模式] 读取 .pt 文件: {args.preprocessed_root}")
-        from medseg.data.dataset_offline import load_pt_paths, split_pt_paths
-        from medseg.data.build_loader import build_loaders_offline
 
         all_pt = load_pt_paths(args.preprocessed_root)
-        _, va_paths = split_pt_paths(all_pt, val_ratio=args.val_ratio, seed=args.seed)
+        _, _, te_paths = split_three_ways(
+            all_pt, test_ratio=args.test_ratio, val_ratio=args.val_ratio, seed=args.seed
+        )
 
-        _, val_loader = build_loaders_offline(
+        _, test_loader = build_loaders_offline(
             [],
-            va_paths,
+            te_paths,
             patch_size=tuple(args.patch),
             batch_size=1,
             num_workers=args.num_workers,
         )
-        print(f"val cases: {len(va_paths)}")
-        return val_loader
+        print(f"测试案例: {len(te_paths)}")
+        return test_loader
 
     print(f"[在线模式] 读取 .nii.gz: {args.data_root}")
     items, _ = load_msd_dataset(args.data_root)
-    tr, va = fixed_split(items, val_ratio=args.val_ratio, seed=args.seed)
-
+    items, _ = load_msd_dataset(args.data_root)
+    _, _, te = split_three_ways(
+        items, test_ratio=args.test_ratio, val_ratio=args.val_ratio, seed=args.seed
+    )
+    # 注意：build_loaders 需要 tr+va 两个参数，这里把 te 当 va 传进去
     _, val_loader = build_loaders(
-        tr,
-        va,
+        [],  # train 为空，只需要 val_loader
+        te,
         patch_size=tuple(args.patch),
         batch_size=1,
         num_workers=args.num_workers,
         cache_rate=args.cache_rate,
     )
-    print(f"val cases: {len(va)}")
+    print(f"测试案例: {len(te)}")
+
     return val_loader
 
 
@@ -234,6 +244,7 @@ def main():
         "data_root": args.data_root,
         "num_classes": int(args.num_classes),
         "val_ratio": float(args.val_ratio),
+        "test_ratio": float(args.test_ratio),
         "seed": int(args.seed),
         "patch": list(args.patch),
         "sw_batch_size": int(args.sw_batch_size),

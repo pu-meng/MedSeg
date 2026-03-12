@@ -80,3 +80,21 @@ def split_pt_paths(pt_paths: list, val_ratio: float = 0.2, seed: int = 0):
     va = paths[:n_val]
     tr = paths[n_val:]
     return tr, va
+
+
+def split_three_ways(pt_paths: list, test_ratio: float = 0.1, 
+                     val_ratio: float = 0.2, seed: int = 0):
+    import random
+    rng = random.Random(seed)
+    paths = pt_paths[:]
+    rng.shuffle(paths)
+    
+    n_test = max(1, int(len(paths) * test_ratio))
+    n_val  = max(1, int(len(paths) * val_ratio))
+    
+    te    = paths[-n_test:]            # 从末尾取 test
+    tr_va = paths[:-n_test]            # 剩余
+    va    = tr_va[-n_val:]             # 再从末尾取 val
+    tr    = tr_va[:-n_val]             # 剩余就是 train
+    
+    return tr, va, te

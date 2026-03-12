@@ -147,6 +147,7 @@ def parse_args():
         default=[0.0, 0.5, 0.5],
         help="后半段采样比例 背景/肝脏/肿瘤",
     )
+    p.add_argument("--test_ratio", type=float, default=0.1)
 
     return p.parse_args()
 
@@ -193,6 +194,7 @@ def main():
         "batch_size": int(args.batch_size),
         "lr": float(args.lr),
         "val_ratio": float(args.val_ratio),
+        "test_ratio": float(args.test_ratio),
         "patch": list(args.patch),
         "num_workers": int(args.num_workers),
         "cache_rate": float(args.cache_rate),
@@ -216,8 +218,8 @@ def main():
 
     # 数据加载与 split
     # 数据加载:离线 .pt 或原来的 .nii.gz
-
-    tr, va, use_offline = load_data(args)
+    # 这个地方用到val_ratio，所以不能放在load_data之前
+    tr, va,te, use_offline = load_data(args)
 
     # model/optim
     model = build_model(
