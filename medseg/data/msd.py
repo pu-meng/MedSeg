@@ -1,7 +1,14 @@
 import os
 import glob
 from typing import List, Dict, Tuple
+"""
+msd.py
+负责读取MSD/nnUNet风格的数据集,并进行安全配对和划分.
+输入: MSD/nnUNet风格的数据集路径
+输出: train_items, test_items, 以及 train-val 划分
 
+本质是在线模式的"样本索引构建器"
+"""
 
 def _sorted_nii(folder: str) -> List[str]:
     files = glob.glob(os.path.join(folder, "*.nii.gz")) + glob.glob(
@@ -11,6 +18,13 @@ def _sorted_nii(folder: str) -> List[str]:
 
 
 def _sid_from_path(p: str) -> str:
+    """
+    从文件路径提取ID,例如:
+    输入: /path/to/imagesTr/Case_00001.nii.gz
+    输出: Case_00001;
+    os.path.basename(p) -> Case_00001.nii.gz
+    .replace(".nii.gz", "") -> Case_00001
+    """
     return os.path.basename(p).replace(".nii.gz", "").replace(".nii", "")
 
 
@@ -24,7 +38,6 @@ def load_msd_dataset(task_root: str) -> Tuple[List[Dict], List[Dict]]:
     """
     imagesTr = os.path.join(task_root, "imagesTr")
     labelsTr = os.path.join(task_root, "labelsTr")
-    imagesTs = os.path.join(task_root, "imagesTs")
 
     tr_images = _sorted_nii(imagesTr)
     tr_labels = _sorted_nii(labelsTr)
@@ -62,15 +75,10 @@ def load_msd_dataset(task_root: str) -> Tuple[List[Dict], List[Dict]]:
     if len(extra_labels) > 0:
         raise RuntimeError(f"Labels without images: {extra_labels[:10]}")
 
-    # test(可能不存在 labels)
-    test_items: List[Dict] = []
-    if os.path.isdir(imagesTs):
-        ts_images = _sorted_nii(imagesTs)
-        for img in ts_images:
-            sid = _sid_from_path(img)
-            test_items.append({"image": img, "id": sid})
+  
 
-    return train_items, test_items
+  
+    return train_items
 
 
 def fixed_split(items, val_ratio: float = 0.2, seed: int = 0):
