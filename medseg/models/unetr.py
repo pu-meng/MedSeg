@@ -1,6 +1,27 @@
 from monai.networks.nets import UNETR
 import inspect
+"""
+UNETR:用transformer做encoder,CNN做decoder
+Image
+ ↓
+Patch Embedding
+ ↓
+Transformer Encoder
+ ↓      ↓      ↓      ↓
+Skip1  Skip2  Skip3  Skip4
+  │      │      │      │
+  └──────Decoder (CNN)──────→ segmentation
 
+  UNETR:使用ViT Transformer
+Swin Unetr:使用Swin Transformer,window attention
+
+论文中最常用的是nnUnet/DynUnet,因为它的性能好,而且实现简单,不需要复杂的Transformer结构和训练技巧
+SwinUnetr:性能提升有限,而且实现复杂,需要调整很多超参数,不太适合初学者
+nnUnet v2;
+Transformer在小数据上容易过拟合,CNN训练稳定,超参数简单
+
+
+"""
 
 def build_unetr(in_channels=1, out_channels=2, img_size=(96, 96, 96)):
     """

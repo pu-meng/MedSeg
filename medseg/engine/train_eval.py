@@ -9,7 +9,52 @@ from monai.inferers.utils import sliding_window_inference
 
 
 from monai.losses.tversky import TverskyLoss
+"""
 
+前景:有人体结构的区域
+背景:没有人体结构的区域,例如空气、床板等
+_debug_batch_type(batch),在第一个batch时打印batch的类型结构,帮助调试数据加载和transforms是否正确.
+batch=DataLoader的一次返回的数据
+batch={
+"image": torch.Tensor [B, C, D, H, W],
+"label": torch.Tensor [B, 1, D, H, W],
+}
+
+在线模式和离线模式都需要这个train_eval.py
+train.py
+│
+├── parse_args()             解析参数
+│
+├── load_data(args)
+│       │
+│       ├── 在线数据 (.nii.gz)
+│       │
+│       └── 离线数据 (.pt)
+│
+├── build_loaders_auto()
+│       │
+│       ├── Dataset
+│       └── DataLoader
+│
+├── build_model()
+│
+├── optimizer + scheduler
+│
+└── 训练循环
+        │
+        ├── train_one_epoch()          ← train_eval.py
+        │
+        ├── validate_sliding_window()  ← train_eval.py
+        │
+        └── save_ckpt()
+因为训练逻辑和数据来源没有关系,
+最核心的训练代码只有train_one_epoch()和validate_sliding_window()这两个函数,
+换模型:build_model()
+换数据:build_loaders_auto()
+换验证指标:validate_sliding_window()
+换损失函数:train_one_epoch()
+
+"""
 
 def _debug_batch_type(batch):
     """打印 batch 的类型结构，仅用于第一个 batch 的调试"""
@@ -61,30 +106,7 @@ def train_one_epoch(
             lambda_dice=1.0,
             lambda_focal=2.0,
         )
-
     elif loss_type == "tversky":
-        loss_fn = TverskyLoss(
-            include_background=False,
-            to_onehot_y=True,
-            softmax=True,
-            alpha=alpha,
-            beta=beta,
-        )
-    elif loss_type == "focaltversky":
-        try:
-            loss_fn = TverskyLoss(
-                include_background=False,
-                to_onehot_y=True,
-                softmax=True,
-                alpha=alpha,
-                beta=beta,
-                gamma=0.75,
-                # 如果你的 monai 不支持,会走 except
-            )
-        except TypeError:
-            print(
-                "[warn] TverskyLoss(gamma=..) not supported in this MONAI version, fallback to plain TverskyLoss"
-            )
             loss_fn = TverskyLoss(
                 include_background=False,
                 to_onehot_y=True,
@@ -113,7 +135,7 @@ def train_one_epoch(
         y = y.long().to(device)
 
         # 可选:只在前5个batch打印label情况(避免刷屏)
-        if step <= 5:
+        if step <= 3:
             yy = y[:, 0]
             u = torch.unique(yy).detach().cpu().tolist()
             tumor_vox = int((yy == 2).sum().item())
@@ -131,6 +153,7 @@ def train_one_epoch(
             optimizer.step()
         else:
             with torch.autocast(device_type="cuda", dtype=torch.float16):
+                
                 logits = model(x)
                 loss = loss_fn(logits, y)
             scaler.scale(loss).backward()
@@ -159,6 +182,15 @@ def validate_sliding_window(
 ):
     """
     logits shape:[1,3,D,H,W],3是类别数
+    训练时候:
+    x=batch["image"].to(device)  # [B, C, D, H, W]
+    logits=model(x)
+    loss=loss_fn(logits, y)
+    这里的x是DataLoader提前裁好的patch,
+    没有sliding_window_inference(),也没有roi_size、sw_batch_size、overlap这些参数,
+    训练不用滑窗,验证才用滑窗,因为验证时要评测整个体积的dice,而不是patch的dice.
+    overlap只在验证里有意义,因为overlap控制的是:滑窗窗口之间重叠多少
+    
 
     """
 
@@ -182,13 +214,16 @@ def validate_sliding_window(
 
             y = y[:, 0].long().to(device)
 
-            logits = sliding_window_inference(
-                inputs=x,
-                roi_size=roi_size,
-                sw_batch_size=sw_batch_size,
-                predictor=model,
-                overlap=overlap,
-            )
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+            
+                logits = sliding_window_inference(
+                    inputs=x,
+                    roi_size=roi_size,
+                    sw_batch_size=sw_batch_size,
+                    predictor=model,
+                    overlap=overlap,
+                )
+            logits = logits.float()
 
             assert isinstance(logits, torch.Tensor)
 

@@ -6,7 +6,6 @@ from monai.transforms import (
     Spacingd,
     ScaleIntensityRanged,
     CropForegroundd,
-    RandCropByPosNegLabeld,
     RandFlipd,
     RandRotate90d,
     EnsureTyped,
@@ -16,9 +15,9 @@ from monai.transforms import (
     RandGaussianSmoothd,
     RandAdjustContrastd,
     RandScaleIntensityd,
-    EnsureTyped,
+  
 )
-from monai.transforms import SpatialPadd, ResizeWithPadOrCropd
+from monai.transforms import SpatialPadd
 import torch
 
 from monai.transforms import RandCropByLabelClassesd
@@ -26,7 +25,42 @@ from monai.transforms import RandCropByLabelClassesd
 LIVER_WIN_MIN = -13.7
 LIVER_WIN_MAX = 188.3
 
+"""
+LoadImaged(keys=["image", "label"])
+读取image.nii.gz和label.nii.gz
+SD CT volume,shape=(D,H,W)
+一个NIfTI文件通常是:
+image data (3D array)+affine matrix+voxel spacing+orientation+header info
+affine matrix:坐标变换矩阵,把像素坐标映射到
+物理坐标,包含旋转、缩放、平移等信息
+voxel spacing:每个体素在物理空间中的大小,例如(0.88,0.88,0.88)
+orientation:体素的排列方向,例如RAS(右-前-上)
+header info:文件头信息,例如文件名、创建时间、作者等
 
+
+
+
+EnsureChannelFirstd(keys=["image", "label"])
+把image和label的shape从(D,H,W)变成(1,D,H,W);
+这里的(D,H,W)和(C,H,W)不一样,前者是3D体积的深度、高度、宽度;后者是2D图像的通道数、高度、宽度.
+
+
+Orientationd(keys=["image", "label"], axcodes="RAS")
+把image和label的方向统一成RAS(右-前-上),方便后续处理
+
+Spacingd(
+    pixdim=(0.88,0.88,0.88)
+)把每个体素变成0.88mm的正方体
+
+
+CropForegroundd(source_key="image")
+自动裁剪,没人提,只有空气,床板这些会删掉;
+有人体,但是没有肝脏,这个不删掉,这些依旧属于图像前景
+这个是根据阈值mask=label>threold,
+然后找到这个mask的为true的部分,找出这部分的坐标(x,y,z),
+然后找到xmin,xmax,ymin,ymax,zmin,zmax,把image和label都裁剪成这个范围;
+
+"""
 def build_train_transforms(patch_size=(96, 96, 96), ratios=(0, 0.05, 0.95)):
     """
     Stage1 目标:稳定训练,不追求花哨
@@ -43,6 +77,8 @@ def build_train_transforms(patch_size=(96, 96, 96), ratios=(0, 0.05, 0.95)):
     - Spacingd(pixdim=(1.5,1.5,1.5)) 把每个体素变成15mm的正方体
     - RAS = Right-Anterior-Superior,Anterior是前面,Superior是上面
     -
+       
+
     """
     return Compose(
         [
@@ -71,7 +107,7 @@ def build_train_transforms(patch_size=(96, 96, 96), ratios=(0, 0.05, 0.95)):
                 label_key="label",
                 spatial_size=patch_size,
                 num_classes=3,  # 0/1/2
-                num_samples=4,  # 每个病例切2个patch
+                num_samples=4,  # 每个病例切4个patch
                 ratios=list(ratios),  # ✅ 重点:tumor(2)占更大比例
                 allow_smaller=True,
             ),
