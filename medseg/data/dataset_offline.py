@@ -4,7 +4,8 @@ import torch
 from torch.utils.data import Dataset
 import warnings
 
-from monai.transforms import RandCropByLabelClassesd 
+from monai.transforms import RandCropByLabelClassesd
+
 """
 dataset_offline.py
 负责离线.pt数据的读取和划分,
@@ -40,16 +41,19 @@ class OfflineDataset(Dataset):
     对象=一块带类型的数据
     python对象=一块带类型的数据+类型信息
     对象=数据+类型信息+能做的操作
-     
+
      Dataset应该只返回一个sample,允许返回list,但是最多只能返回一个sample
      不然会带来混乱.
 
     """
 
-    def __init__(self, pt_paths: list, transform=None, repeats=1):
+    def __init__(
+        self, pt_paths: list, transform=None, repeats=1, merge_label12_to1=False
+    ):
         self.pt_paths = pt_paths
         self.transform = transform
         self.repeats = repeats
+        self.merge_label12_to1 = merge_label12_to1
 
         if len(self.pt_paths) == 0:
             raise ValueError("pt_paths 为空,OfflineDataset 无法构建.")
@@ -68,6 +72,12 @@ class OfflineDataset(Dataset):
                 weights_only=False,
                 mmap=True,
             )
+        
+        if self.merge_label12_to1:
+            if "label" not in data:
+                raise KeyError(f"数据中没有 'label' 键: {self.pt_paths[case_idx]}")
+            data["label"]=(data["label"]>0).long() # 把标签1和2都变成1,背景是0
+
 
         if self.transform is not None:
             data = self.transform(data)
@@ -82,6 +92,7 @@ class OfflineDataset(Dataset):
                 )
 
         return data
+
     def set_ratios(self, ratios):
         """
         在transform里面找到RandCropByLabelClassesd,
@@ -99,7 +110,7 @@ class OfflineDataset(Dataset):
         所以return一次就结束了
 
         pipeline是管道的意思,把数据从输入到输出,经过一系列的transform
-        
+
 
 
         """
@@ -131,19 +142,21 @@ def split_pt_paths(pt_paths: list, val_ratio: float = 0.2, seed: int = 0):
     return tr, va
 
 
-def split_three_ways(pt_paths: list, test_ratio: float = 0.1, 
-                     val_ratio: float = 0.2, seed: int = 0):
+def split_three_ways(
+    pt_paths: list, test_ratio: float = 0.1, val_ratio: float = 0.2, seed: int = 0
+):
     import random
+
     rng = random.Random(seed)
     paths = pt_paths[:]
     rng.shuffle(paths)
-    
+
     n_test = max(1, int(len(paths) * test_ratio))
-    n_val  = max(1, int(len(paths) * val_ratio))
-    
-    te    = paths[-n_test:]            # 从末尾取 test
-    tr_va = paths[:-n_test]            # 剩余
-    va    = tr_va[-n_val:]             # 再从末尾取 val
-    tr    = tr_va[:-n_val]             # 剩余就是 train
-    
+    n_val = max(1, int(len(paths) * val_ratio))
+
+    te = paths[-n_test:]  # 从末尾取 test
+    tr_va = paths[:-n_test]  # 剩余
+    va = tr_va[-n_val:]  # 再从末尾取 val
+    tr = tr_va[:-n_val]  # 剩余就是 train
+
     return tr, va, te

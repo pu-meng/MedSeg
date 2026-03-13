@@ -15,7 +15,7 @@ def set_seed(seed: int):
 
 
 def get_stage_ratios(
-    epoch: int, epochs: int, early_ratios=(0.0, 1.0, 0.0), late_ratios=(0.0, 0.5, 0.5)
+    epoch: int, epochs: int, early_ratios=(0.0, 1.0), late_ratios=(0.0, 1.0)
 ):
     """
     early_ratios: 前半段使用的采样比例
@@ -110,6 +110,7 @@ def build_loaders_auto(args, tr, va, use_offline, train_ratios):
             train_ratios=train_ratios,
             prefetch_factor=args.prefetch_factor,
             repeats=args.repeats,
+            merge_label12_to1=args.merge_label12_to1,
         )
     else:
         return build_loaders(

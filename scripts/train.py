@@ -35,6 +35,7 @@ from medseg.tasks import get_task
 
 from medseg.utils.train_logger import TrainLogger
 from pathlib import Path
+
 # ✅ 新增:统一输出工具
 from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
 
@@ -50,7 +51,7 @@ def short(path, keep=3):
     """
     path:输入路径
     keep:保留几段路径
-  
+
     Linux:/home/pumengyu/Desktop/medseg
     所以要先统一成/
     parts=['','home','user'];
@@ -153,21 +154,31 @@ def parse_args():
     p.add_argument(
         "--early_ratios",
         type=float,
-        nargs=3,
-        default=[0.0, 1.0, 0.0],
-        help="前半段采样比例 背景/肝脏/肿瘤",
+        nargs=2,
+        default=[0.0, 1.0],
+        help="前半段采样比例 背景/前景,前景包括肝脏和肿瘤",
     )
     p.add_argument(
         "--late_ratios",
         type=float,
-        nargs=3,
-        default=[0.0, 0.5, 0.5],
-        help="后半段采样比例 背景/肝脏/肿瘤",
+        nargs=2,
+        default=[0.0, 1.0],
+        help="后半段采样比例 背景/前景,前景包括肝脏和肿瘤",
     )
     p.add_argument("--test_ratio", type=float, default=0.1)
 
-    p.add_argument("--val_patch", type=int, nargs=3, default=None,
-               help="验证滑窗roi_size；不传则默认等于patch")
+    p.add_argument(
+        "--val_patch",
+        type=int,
+        nargs=3,
+        default=None,
+        help="验证滑窗roi_size；不传则默认等于patch",
+    )
+    p.add_argument(
+        "--merge_label12_to1",
+        action="store_true",
+        help="将label中的1和2合并为1，用于liver-only二分类训练",
+    )
 
     return p.parse_args()
 
@@ -242,6 +253,7 @@ def main():
         "momentum": 0.99,
         "weight_decay": 3e-5,
         "lr_scheduler": "poly_0.9",
+        "merge_label12_to1": bool(args.merge_label12_to1),
     }
     save_json(config, workdir, "config")
 
@@ -292,7 +304,7 @@ def main():
     )
 
     train_loader, val_loader = build_loaders_auto(
-        args, tr, va, use_offline, init_ratios
+        args, tr, va, use_offline, train_ratios=init_ratios
     )
     current_train_ratios = init_ratios
 
@@ -366,10 +378,16 @@ def main():
         dt = time.time() - t0
         dt_m = dt / 60
         if did_val:
-            print(
-                f"[{now}][Epoch {epoch:03d}] loss={train_loss:.4f}  "
-                f"liver_dice={val_c1:.4f} tumor_dice={val_c2:.4f} best={best:.4f}  time={dt_m:.1f}m"
-            )
+            if int(args.num_classes) == 2:
+                print(
+                    f"[{now}][Epoch {epoch:03d}] loss={train_loss:.4f}  "
+                    f"liver_dice={val_c1:.4f} best={best:.4f}  time={dt_m:.1f}m"
+                )
+            else:
+                print(
+                    f"[{now}][Epoch {epoch:03d}] loss={train_loss:.4f}  "
+                    f"liver_dice={val_c1:.4f} tumor_dice={val_c2:.4f} best={best:.4f}  time={dt_m:.1f}m"
+                )
         else:
             print(f"[{now}][Epoch {epoch:03d}] loss={train_loss:.4f}  time={dt_m:.1f}m")
 

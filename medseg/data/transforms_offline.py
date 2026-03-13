@@ -19,12 +19,11 @@ from monai.transforms import (
     RandAdjustContrastd,
     RandScaleIntensityd,
     EnsureTyped,
-
 )
 from monai.transforms import SpatialPadd
 
 
-def build_train_transforms(patch_size=(144, 144, 144), ratios=(0.0, 0.05, 0.95)):
+def build_train_transforms(patch_size=(144, 144, 144), ratios=(0.0, 1.0)):
     """
     训练 transforms:只做随机增强.
     输入已经是归一化+裁剪好的 tensor,从 .pt 直接加载.
@@ -39,7 +38,7 @@ def build_train_transforms(patch_size=(144, 144, 144), ratios=(0.0, 0.05, 0.95))
                 keys=["image", "label"],
                 label_key="label",
                 spatial_size=patch_size,
-                num_classes=3,  # 0=bg, 1=liver, 2=tumor
+                num_classes=2,  # 0=背景, 1=前景(肝脏+肿瘤)
                 num_samples=1,  # 每个病例切1个patch
                 ratios=list(ratios),  # tumor占更大比例
                 allow_smaller=True,

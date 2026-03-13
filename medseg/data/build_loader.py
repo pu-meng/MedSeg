@@ -20,82 +20,81 @@ def build_loaders(
     cache_rate_val=None,
     prefetch_factor=4,  # ✅ 新增:val 单独 cache
     force_no_cache_for_train=False,
-
 ):
     """
-    build_loader.py
-  
-    负责把 train/val 数据包装成 DataLoader
-    在线模式: build_loaders
-    离线模式: build_loaders_offline
+        build_loader.py
 
-    说明:
-    train_ratios控制训练集随机裁块的时候,不同类别的采样比例.
+        负责把 train/val 数据包装成 DataLoader
+        在线模式: build_loaders
+        离线模式: build_loaders_offline
+
+        说明:
+        train_ratios控制训练集随机裁块的时候,不同类别的采样比例.
 
 
-    CacheDataset 的输入
-    train_items=[
-    {
-    "image":"/path/image1.nii.gz",
-    "label":"/path/label1.nii.gz"
-    },
-    {
-    "image":"/path/image2.nii.gz",
-    "label":"/path/label2.nii.gz"
-    },
-    ...
+        CacheDataset 的输入
+        train_items=[
+        {
+        "image":"/path/image1.nii.gz",
+        "label":"/path/label1.nii.gz"
+        },
+        {
+        "image":"/path/image2.nii.gz",
+        "label":"/path/label2.nii.gz"
+        },
+        ...
+        ]
+        为啥这样?
+        因为transform按照key操作,例如:
+        LoadImaged(keys=["image", "label"])
+        意思是读取dict["image"]和dict["label"]的路径
+        CacheDataset第一步:拿到一个item,item=train_items[0]
+        第二步:拿到item["image"]和item["label"]的路径
+        第三步:LoadImaged(keys=["image", "label"])读取路径,得到image和label的tensor
+        第四步:transform(image, label)对image和label进行各种操作,例如裁剪,resize等
+        第五步:将image和label打包成一个dict,返回给DataLoader
+        第六步:DataLoader将dict打包成一个batch,返回给模型
+
+        pin_memory=True,CPU到GPU的拷贝速度更快
+        persistent_workers=True,worker进程不会每个epoch都重启,
+        worker一直活着
+
+
+        train_ids=CacheDataset(train_items,...)
+        train_loader=DataLoader(train_ids,...)
+
+        train_items = [
+        {"image": "/path/xxx1.nii.gz", "label": "/path/yyy1.nii.gz"},
+        {"image": "/path/xxx2.nii.gz", "label": "/path/yyy2.nii.gz"},
     ]
-    为啥这样?
-    因为transform按照key操作,例如:
-    LoadImaged(keys=["image", "label"])
-    意思是读取dict["image"]和dict["label"]的路径
-    CacheDataset第一步:拿到一个item,item=train_items[0]
-    第二步:拿到item["image"]和item["label"]的路径
-    第三步:LoadImaged(keys=["image", "label"])读取路径,得到image和label的tensor
-    第四步:transform(image, label)对image和label进行各种操作,例如裁剪,resize等
-    第五步:将image和label打包成一个dict,返回给DataLoader
-    第六步:DataLoader将dict打包成一个batch,返回给模型
-     
-    pin_memory=True,CPU到GPU的拷贝速度更快
-    persistent_workers=True,worker进程不会每个epoch都重启,
-    worker一直活着
+        Dataset类似后厨,DataLoader类似服务员,
+        train_ids的类型是monai.data.CacheDataset,
+        而CacheDataset又继承与torch.utils.data.Dataset,
+        所以train_ids本质上是一个Pytorch Dataset
+        Dataset="一个可以按索引取样本的数据集合"；
+        Dataset必须实现__getitem__()和__len__()方法
+        医学中:
+        train_ds=train_items+transform pipeline+cache
+        可以理解为
+        train_ds={
+        "data":train_items,
+        "transform":transform pipeline,
+        "cache":cache
+        }
+        真正的数据是在调用train_ds[0]的时候才加载的,例如:
+        DataLoader只会做
+        batch=[
+        dataset[i],
+        dataset[i+1],
+        ...
 
+        ]
+        train_items=数据清单
+        dataset=单个样本生成器
+        DataLoader=批量样本生成器
+        医学图像训练系统：
+        数据描述，样本生成,批处理
 
-    train_ids=CacheDataset(train_items,...)
-    train_loader=DataLoader(train_ids,...)
-
-    train_items = [
-    {"image": "/path/xxx1.nii.gz", "label": "/path/yyy1.nii.gz"},
-    {"image": "/path/xxx2.nii.gz", "label": "/path/yyy2.nii.gz"},
-]
-    Dataset类似后厨,DataLoader类似服务员,
-    train_ids的类型是monai.data.CacheDataset,
-    而CacheDataset又继承与torch.utils.data.Dataset,
-    所以train_ids本质上是一个Pytorch Dataset
-    Dataset="一个可以按索引取样本的数据集合"；
-    Dataset必须实现__getitem__()和__len__()方法
-    医学中:
-    train_ds=train_items+transform pipeline+cache
-    可以理解为
-    train_ds={
-    "data":train_items,
-    "transform":transform pipeline,
-    "cache":cache
-    }
-    真正的数据是在调用train_ds[0]的时候才加载的,例如:
-    DataLoader只会做
-    batch=[
-    dataset[i],
-    dataset[i+1],
-    ...
-    
-    ] 
-    train_items=数据清单
-    dataset=单个样本生成器
-    DataLoader=批量样本生成器
-    医学图像训练系统：
-    数据描述，样本生成,批处理
-    
 
 
     """
@@ -109,15 +108,14 @@ def build_loaders(
         cache_rate_train = cache_rate
     if cache_rate_val is None:
         cache_rate_val = cache_rate
-    
+
     if force_no_cache_for_train:
         cache_rate_train = 0.0
 
     # ✅ 动态 ratios 的时候,强制 train 不缓存(否则 ratios 不生效)
-  
+
     train_tf = build_train_transforms(patch_size, ratios=train_ratios)
-    
-    
+
     val_tf = build_val_transforms()
 
     train_ds = CacheDataset(
@@ -134,7 +132,6 @@ def build_loaders(
         num_workers=num_workers,
     )
     if num_workers > 0:
-
         train_loader = DataLoader(
             train_ds,
             batch_size=batch_size,
@@ -179,7 +176,8 @@ def build_loaders_offline(
     num_workers=4,
     train_ratios=None,
     prefetch_factor=4,
-    repeats=1
+    repeats=1,
+    merge_label12_to1=False,
 ):
     """
     离线预处理版 DataLoader.
@@ -187,14 +185,19 @@ def build_loaders_offline(
     原 build_loaders 完全不动,两套并存.
     """
     if train_ratios is None:
-        train_ratios = (0.0, 0.05, 0.95)
+        train_ratios = (0.0, 1.0)
 
     train_tf = build_train_transforms_offline(patch_size, ratios=train_ratios)
     val_tf = build_val_transforms_offline()
 
     train_loader = None
     if len(tr_paths) > 0:
-        train_ds = OfflineDataset(tr_paths, transform=train_tf, repeats=repeats)
+        train_ds = OfflineDataset(
+            tr_paths,
+            transform=train_tf,
+            repeats=repeats,
+            merge_label12_to1=merge_label12_to1,
+        )
         if num_workers > 0:
             train_loader = TorchDataLoader(
                 train_ds,
@@ -212,10 +215,9 @@ def build_loaders_offline(
                 shuffle=True,
                 num_workers=0,
                 pin_memory=True,
-             
             )
 
-    val_ds = OfflineDataset(va_paths, transform=val_tf, repeats=1)
+    val_ds = OfflineDataset(va_paths, transform=val_tf, repeats=1, merge_label12_to1=merge_label12_to1)
     if num_workers > 0:
         val_loader = TorchDataLoader(
             val_ds,
@@ -233,7 +235,6 @@ def build_loaders_offline(
             shuffle=False,
             num_workers=0,
             pin_memory=True,
-          
         )
 
     return train_loader, val_loader
