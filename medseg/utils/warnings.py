@@ -1,4 +1,14 @@
 import warnings
+"""
+r"",r=raw
+"\n"表示换行
+r"\n"这里的\n,就是单纯的符号\n
+f"",f=format(格式化字符串)
+f的作用是字符串里嵌入变量
+
+先进行python解释,类似r""这里的r保证里面的原模原样;
+然后进行正则表达式解释,
+"""
 
 def setup_warnings():
     # 1) 屏蔽 cuda.cudart 的 FutureWarning(不影响训练)
@@ -15,10 +25,4 @@ def setup_warnings():
         category=FutureWarning,
     )
 
-    # (可选)如果你还想更“干净”,把 MONAI 的 FutureWarning 都压掉:
-    # warnings.filterwarnings("ignore", category=FutureWarning, module=r"monai\..*")
-
-    #FutureWarning:未来版本会改
-    #DeprecationWarning:即将废弃
-    #UserWarning:用户警告
-    #r是正则表达式,raw string,字符串前加r,表示字符串不转义
+  

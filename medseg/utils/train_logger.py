@@ -7,6 +7,17 @@ from datetime import datetime
 class TrainLogger:
     """
     同时写 log.csv 和 log.txt,train.py 只需调用 .log() 一行.
+    train_logger.py是训练过程日志记录器;
+    f"{'time':<14}"这个是左对齐,宽度14
+    f"{epoch:>5}"这个是右对齐,宽度5
+    "-" * 60 是画横线,重复60次
+    math.isnan(x) 判断 x 是否是 NaN
+
+    open(file,mode,encoding)
+    这里的file是文件路径
+    mode是打开文件的模式,
+    r,读;w,写;a,追加;b,二进制;
+    
     """
 
     def __init__(self, workdir: str):
