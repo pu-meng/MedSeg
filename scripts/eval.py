@@ -150,7 +150,7 @@ def build_val_loader(args):
 
     print(f"[在线模式] 读取 .nii.gz: {args.data_root}")
     items, _ = load_msd_dataset(args.data_root)
-    
+
     _, _, te = split_three_ways(
         items, test_ratio=args.test_ratio, val_ratio=args.val_ratio, seed=args.seed
     )
@@ -223,7 +223,7 @@ def main():
     t1 = time.time()
 
     total_sec = t1 - t0
-    n_cases = len(val_loader.dataset) if hasattr(val_loader, "dataset") else None
+    n_cases = len(val_loader.dataset) if hasattr(val_loader, "dataset") else None  # type:ignore
     sec_per_case = (total_sec / n_cases) if (n_cases and n_cases > 0) else None
 
     val_mean = float(metrics["mean_fg"])

@@ -108,9 +108,9 @@ def main():
     from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
 
     from medseg.utils.train_utils import set_seed
-    from twostage.train_logger import TrainLoggerTwoStage
-    from twostage.dataset_tumor_roi import TumorROIDataset
-    from twostage.train_eval_tumor import tumor_metrics_from_val_result
+    from twostage_medseg.twostage.train_logger import TrainLoggerTwoStage
+    from twostage_medseg.twostage.dataset_tumor_roi import TumorROIDataset
+    from twostage_medseg.twostage.train_eval_tumor import tumor_metrics_from_val_result
 
     set_seed(args.seed)
 

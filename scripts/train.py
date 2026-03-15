@@ -277,7 +277,7 @@ def main():
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optim, lr_lambda=lambda epoch: (1 - epoch / args.epochs) ** 0.9
     )
-    scaler = torch.amp.GradScaler() if (args.amp and device == "cuda") else None
+    scaler = torch.cuda.amp.GradScaler() if (args.amp and device == "cuda") else None
 
     logger = TrainLogger(workdir)
 

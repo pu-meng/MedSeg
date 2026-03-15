@@ -4,7 +4,9 @@ import torch
 from torch.utils.data import Dataset
 import warnings
 
-from monai.transforms import RandCropByLabelClassesd
+from monai.transforms.croppad.dictionary import RandCropByLabelClassesd
+from typing import Optional
+from monai.transforms.compose import Compose
 
 """
 dataset_offline.py
@@ -48,7 +50,11 @@ class OfflineDataset(Dataset):
     """
 
     def __init__(
-        self, pt_paths: list, transform=None, repeats=1, merge_label12_to1=False
+        self,
+        pt_paths: list,
+        transform: Optional[Compose] = None,
+        repeats=1,
+        merge_label12_to1=False,
     ):
         self.pt_paths = pt_paths
         self.transform = transform
@@ -72,12 +78,11 @@ class OfflineDataset(Dataset):
                 weights_only=False,
                 mmap=True,
             )
-        
+
         if self.merge_label12_to1:
             if "label" not in data:
                 raise KeyError(f"数据中没有 'label' 键: {self.pt_paths[case_idx]}")
-            data["label"]=(data["label"]>0).long() # 把标签1和2都变成1,背景是0
-
+            data["label"] = (data["label"] > 0).long()  # 把标签1和2都变成1,背景是0
 
         if self.transform is not None:
             data = self.transform(data)
@@ -114,9 +119,14 @@ class OfflineDataset(Dataset):
 
 
         """
+        if self.transform is None:
+            raise RuntimeError("transform 为 None,无法设置 ratios.")
+        if not hasattr(self.transform, "transforms"):
+            raise RuntimeError("transform 不是 Compose,无法设置 ratios.")
+
         for t in self.transform.transforms:
             if isinstance(t, RandCropByLabelClassesd):
-                t.ratios = list(ratios)
+                t.ratios = list(ratios)  # type:ignore
                 return
         raise RuntimeError("找不到 RandCropByLabelClassesd")
 

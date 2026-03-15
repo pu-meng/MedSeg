@@ -12,7 +12,7 @@ from medseg.data.dataset_offline import load_pt_paths
 from medseg.models.build_model import build_model
 from medseg.utils.ckpt import load_ckpt
 from monai.inferers.utils import sliding_window_inference
-from twostage.roi_utils import compute_bbox_from_mask, crop_3d, paste_3d, bbox_to_dict
+from twostage_medseg.twostage.roi_utils import compute_bbox_from_mask, crop_3d, paste_3d, bbox_to_dict
 
 
 def add_medseg_to_syspath(medseg_root: str) -> None:
