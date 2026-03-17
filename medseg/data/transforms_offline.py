@@ -10,17 +10,18 @@ transforms_offline.py
 """
 
 import torch
-from monai.transforms import (
-    Compose,
-    RandCropByLabelClassesd,
-    RandFlipd,
-    RandRotate90d,
+from monai.transforms.compose import Compose
+
+from monai.transforms.croppad.dictionary import RandCropByLabelClassesd
+from monai.transforms.spatial.dictionary import RandFlipd, RandRotate90d
+from monai.transforms.intensity.dictionary import (
     RandGaussianNoised,
     RandAdjustContrastd,
     RandScaleIntensityd,
-    EnsureTyped,
 )
-from monai.transforms import SpatialPadd
+from monai.transforms.utility.dictionary import EnsureTyped
+
+from monai.transforms.croppad.dictionary import SpatialPadd
 
 
 def build_train_transforms(patch_size=(144, 144, 144), ratios=(0.0, 1.0)):
@@ -38,8 +39,8 @@ def build_train_transforms(patch_size=(144, 144, 144), ratios=(0.0, 1.0)):
                 keys=["image", "label"],
                 label_key="label",
                 spatial_size=patch_size,
-                num_classes=2,  # 0=背景, 1=前景(肝脏+肿瘤)
-                num_samples=1,  # 每个病例切1个patch
+                num_classes=2,  # 0=背景, 1=前景(肝脏+肿瘤)/或者0=肝脏,1=肿瘤
+                num_samples=1,  # 每个病例切1个patch,这个要是增加会增加内存,repeats的增加可以起到同样的效果;
                 ratios=list(ratios),  # tumor占更大比例
                 allow_smaller=True,
             ),
@@ -48,34 +49,11 @@ def build_train_transforms(patch_size=(144, 144, 144), ratios=(0.0, 1.0)):
             RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
             RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
             RandRotate90d(keys=["image", "label"], prob=0.3, max_k=3),
-            # 任意角度旋转(nnUNet核心增强)
-            # RandRotated(
-            #     keys=["image", "label"],
-            #     range_x=0.523,  # ≈30度
-            #     range_y=0.523,
-            #     range_z=0.523,
-            #     prob=0.3,
-            #     mode=("bilinear", "nearest"),
-            #     padding_mode="zeros",
-            # ),
-            # 随机缩放(模拟器官大小变化)
-            # RandZoomd(
-            #     keys=["image", "label"],
-            #     min_zoom=0.85,
-            #     max_zoom=1.25,
-            #     prob=0.3,
-            #     mode=("bilinear", "nearest"),
-            #     padding_mode="constant",
-            # ),
+           
+           
             # ── 强度增强(只作用于image)────────────────────────────────
             RandGaussianNoised(keys=["image"], prob=0.15, mean=0.0, std=0.1),
-            # RandGaussianSmoothd(
-            #     keys=["image"],
-            #     sigma_x=(0.5, 1.5),
-            #     sigma_y=(0.5, 1.5),
-            #     sigma_z=(0.5, 1.5),
-            #     prob=0.15,
-            # ),
+          
             RandAdjustContrastd(keys=["image"], prob=0.15, gamma=(0.5, 1.5)),
             RandScaleIntensityd(keys=["image"], factors=0.1, prob=0.15),
             # ── 类型保证 ──────────────────────────────────────────────────

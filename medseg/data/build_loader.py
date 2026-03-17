@@ -1,4 +1,5 @@
-from monai.data import DataLoader, CacheDataset
+from monai.data.dataloader import DataLoader
+from monai.data.dataset import CacheDataset
 from medseg.data.transforms import build_train_transforms, build_val_transforms
 from medseg.data.dataset_offline import OfflineDataset
 from medseg.data.transforms_offline import (
@@ -217,7 +218,9 @@ def build_loaders_offline(
                 pin_memory=True,
             )
 
-    val_ds = OfflineDataset(va_paths, transform=val_tf, repeats=1, merge_label12_to1=merge_label12_to1)
+    val_ds = OfflineDataset(
+        va_paths, transform=val_tf, repeats=1, merge_label12_to1=merge_label12_to1
+    )
     if num_workers > 0:
         val_loader = TorchDataLoader(
             val_ds,

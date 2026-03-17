@@ -9,6 +9,7 @@ from monai.inferers.utils import sliding_window_inference
 
 
 from monai.losses.tversky import TverskyLoss
+
 """
 
 前景:有人体结构的区域
@@ -56,6 +57,7 @@ train.py
 
 """
 
+
 def _debug_batch_type(batch):
     """打印 batch 的类型结构，仅用于第一个 batch 的调试"""
     print("type(batch) =", type(batch))
@@ -75,6 +77,206 @@ def _debug_batch_type(batch):
         print("len(batch[0]) =", len(first))
         if first:
             print("type(batch[0][0]) =", type(first[0]))
+
+
+def build_loss_fn_multiclass(loss_type="dicece"):
+    alpha = 0.3
+    beta = 0.7
+
+    if loss_type == "dicece":
+        return DiceCELoss(
+            include_background=False,
+            to_onehot_y=True,
+            softmax=True,
+        )
+    elif loss_type == "dicefocal":
+        return DiceFocalLoss(
+            include_background=False,
+            to_onehot_y=True,
+            softmax=True,
+            gamma=2.0,
+            lambda_dice=1.0,
+            lambda_focal=2.0,
+        )
+    elif loss_type == "tversky":
+        return TverskyLoss(
+            include_background=False,
+            to_onehot_y=True,
+            softmax=True,
+            alpha=alpha,
+            beta=beta,
+        )
+    else:
+        raise ValueError(f"Unknown loss type: {loss_type}")
+
+
+def build_loss_fn_binary(loss_type="dicece"):
+    alpha = 0.3
+    beta = 0.7
+
+    if loss_type == "dicece":
+        return DiceCELoss(
+            include_background=False,
+            to_onehot_y=True,
+            softmax=True,
+        )
+    elif loss_type == "dicefocal":
+        return DiceFocalLoss(
+            include_background=False,
+            to_onehot_y=True,
+            softmax=True,
+            gamma=2.0,
+            lambda_dice=1.0,
+            lambda_focal=2.0,
+        )
+    elif loss_type == "tversky":
+        return TverskyLoss(
+            include_background=False,
+            to_onehot_y=True,
+            softmax=True,
+            alpha=alpha,
+            beta=beta,
+        )
+    else:
+        raise ValueError(f"Unknown loss type: {loss_type}")
+
+
+def train_one_epoch_multiclass(
+    model,
+    loader,
+    optimizer,
+    device,
+    scaler=None,
+    loss_type="dicece",
+    epoch=None,
+    epochs=None,
+):
+    model.train()
+    loss_fn = build_loss_fn_multiclass(loss_type)
+
+    running = 0.0
+    n = len(loader)
+
+    print(f"Epoch {epoch}/{epochs} training (multiclass):")
+
+    for step, batch in enumerate(loader, start=1):
+        if step == 1:
+            _debug_batch_type(batch)
+
+        while isinstance(batch, list):
+            batch = batch[0]
+
+        x = batch["image"].to(device)
+        y = batch["label"].to(device)
+
+        if y.ndim == 4:
+            y = y.unsqueeze(1)
+        y = y.long()
+
+        if step <= 3:
+            yy = y[:, 0]
+            u = torch.unique(yy).detach().cpu().tolist()
+            liver_vox = int((yy == 1).sum().item())
+            tumor_vox = int((yy == 2).sum().item())
+            print(
+                f"[debug-multi] batch {step}: unique={u} liver_vox={liver_vox} tumor_vox={tumor_vox}"
+            )
+
+        optimizer.zero_grad(set_to_none=True)
+
+        if scaler is None:
+            logits = model(x)
+            loss = loss_fn(logits, y)
+            loss.backward()
+            optimizer.step()
+        else:
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True):
+                logits = model(x)
+                loss = loss_fn(logits, y)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+        running += float(loss.item())
+
+        if step % 10 == 0:
+            print(
+                f"[train-multi] step={step}/{len(loader)} loss={float(loss.item()):.4f}"
+            )
+
+    return running / max(1, n)
+
+
+def train_one_epoch_binary(
+    model,
+    loader,
+    optimizer,
+    device,
+    scaler=None,
+    loss_type="dicece",
+    epoch=None,
+    epochs=None,
+):
+    model.train()
+    loss_fn = build_loss_fn_binary(loss_type)
+
+    running = 0.0
+    n = len(loader)
+
+    print(f"Epoch {epoch}/{epochs} training (binary tumor):")
+
+    for step, batch in enumerate(loader, start=1):
+        if step == 1:
+            _debug_batch_type(batch)
+
+        while isinstance(batch, list):
+            batch = batch[0]
+
+        x = batch["image"].to(device)
+        y = batch["label"].to(device)
+
+        if y.ndim == 4:
+            y = y.unsqueeze(1)
+        y = y.long()
+        u = torch.unique(y)
+        if not torch.all((u == 0) | (u == 1)):
+            raise ValueError(
+                f"Binary tumor training expects labels in {{0,1}}, but got {u.detach().cpu().tolist()}"
+            )
+
+        # 二分类强约束: 标签只能是 0/1
+        if step <= 3:
+            yy = y[:, 0]
+            u = torch.unique(yy).detach().cpu().tolist()
+            tumor_vox = int((yy == 1).sum().item())
+            bg_vox = int((yy == 0).sum().item())
+            print(
+                f"[debug-binary] batch {step}: unique={u} bg_vox={bg_vox} tumor_vox={tumor_vox}"
+            )
+
+        optimizer.zero_grad(set_to_none=True)
+
+        if scaler is None:
+            logits = model(x)
+            loss = loss_fn(logits, y)
+            loss.backward()
+            optimizer.step()
+        else:
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True):
+                logits = model(x)
+                loss = loss_fn(logits, y)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+        running += float(loss.item())
+
+        if step % 10 == 0:
+            print(
+                f"[train-binary] step={step}/{len(loader)} loss={float(loss.item()):.4f}"
+            )
+
+    return running / max(1, n)
 
 
 def train_one_epoch(
@@ -107,13 +309,13 @@ def train_one_epoch(
             lambda_focal=2.0,
         )
     elif loss_type == "tversky":
-            loss_fn = TverskyLoss(
-                include_background=False,
-                to_onehot_y=True,
-                softmax=True,
-                alpha=alpha,
-                beta=beta,
-            )
+        loss_fn = TverskyLoss(
+            include_background=False,
+            to_onehot_y=True,
+            softmax=True,
+            alpha=alpha,
+            beta=beta,
+        )
     else:
         raise ValueError(f"Unknown loss type: {loss_type}")
 
@@ -153,7 +355,6 @@ def train_one_epoch(
             optimizer.step()
         else:
             with torch.autocast(device_type="cuda", dtype=torch.float16):
-                
                 logits = model(x)
                 loss = loss_fn(logits, y)
             scaler.scale(loss).backward()
@@ -190,7 +391,7 @@ def validate_sliding_window(
     没有sliding_window_inference(),也没有roi_size、sw_batch_size、overlap这些参数,
     训练不用滑窗,验证才用滑窗,因为验证时要评测整个体积的dice,而不是patch的dice.
     overlap只在验证里有意义,因为overlap控制的是:滑窗窗口之间重叠多少
-    
+
 
     """
 
@@ -215,7 +416,6 @@ def validate_sliding_window(
             y = y[:, 0].long().to(device)
 
             with torch.autocast(device_type="cuda", dtype=torch.float16):
-            
                 logits = sliding_window_inference(
                     inputs=x,
                     roi_size=roi_size,
@@ -223,7 +423,7 @@ def validate_sliding_window(
                     predictor=model,
                     overlap=overlap,
                 )
-            logits = logits.float()
+            logits = logits.float()  # type:ignore
 
             assert isinstance(logits, torch.Tensor)
 

@@ -74,11 +74,7 @@ def load_msd_dataset(task_root: str) -> Tuple[List[Dict], List[Dict]]:
     extra_labels = [sid for sid in label_map.keys() if sid not in image_ids]
     if len(extra_labels) > 0:
         raise RuntimeError(f"Labels without images: {extra_labels[:10]}")
-
-  
-
-  
-    return train_items
+    return train_items        # type:ignore
 
 
 def fixed_split(items, val_ratio: float = 0.2, seed: int = 0):

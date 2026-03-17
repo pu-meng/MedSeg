@@ -1,4 +1,4 @@
-from monai.networks.nets import SwinUNETR
+from monai.networks.nets.swin_unetr import SwinUNETR
 
 """
 SwinUNETR=Swin transformer+UNETR
@@ -24,11 +24,20 @@ Swin Transformer
 
 """
 
-def build_swinunetr(in_channels=1, out_channels=2, img_size=(96, 96, 96)):
+
+# def build_swinunetr(in_channels=1, out_channels=2, img_size=(96, 96, 96)):
+#     return SwinUNETR(
+#         img_size=img_size,
+#         in_channels=in_channels,
+#         out_channels=out_channels,
+#         feature_size=24,
+#         use_checkpoint=True,
+#     )
+def build_swinunetr(in_channels=1, out_channels=2, img_size=(96,96,96)):
+
     return SwinUNETR(
-        img_size=img_size,
         in_channels=in_channels,
         out_channels=out_channels,
-        feature_size=24,
+        feature_size=12,
         use_checkpoint=True,
     )

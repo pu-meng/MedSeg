@@ -132,6 +132,9 @@ class OfflineDataset(Dataset):
 
 
 def load_pt_paths(preprocessed_dir: str, n: int = 0) -> list:
+    """
+    返回的是路径列表
+    """
     paths = sorted(glob.glob(os.path.join(preprocessed_dir, "*.pt")))
     if len(paths) == 0:
         raise FileNotFoundError(f"没有找到 .pt 文件: {preprocessed_dir}")
@@ -170,3 +173,6 @@ def split_three_ways(
     tr = tr_va[:-n_val]  # 剩余就是 train
 
     return tr, va, te
+
+
+# /home/pumengyu/medseg_project/medseg/utils/train_utils.py

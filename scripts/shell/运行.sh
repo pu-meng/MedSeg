@@ -26,6 +26,8 @@ PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 python -
 
 
 two-stage 调整成0=背景,1=肝脏+肿瘤的二分类任务：
+workdir = os.path.join(args.exp_root, args.exp_name, "train", timestamp)
+
 
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
   --task liver \

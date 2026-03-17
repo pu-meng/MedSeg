@@ -15,7 +15,7 @@ from medseg.tasks import get_task
 
 from medseg.data.build_loader import build_loaders_offline
 from medseg.data.dataset_offline import load_pt_paths
-from medseg.utils.train_utils import split_three_ways
+from medseg.data.dataset_offline import split_three_ways
 
 setup_warnings()
 
