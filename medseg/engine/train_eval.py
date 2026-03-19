@@ -1,13 +1,7 @@
 import torch
-
-
 from monai.losses.dice import DiceCELoss
-
 from monai.losses.dice import DiceFocalLoss
-
 from monai.inferers.utils import sliding_window_inference
-
-
 from monai.losses.tversky import TverskyLoss
 
 """
@@ -118,13 +112,13 @@ def build_loss_fn_binary(loss_type="dicece"):
         return DiceCELoss(
             include_background=False,
             to_onehot_y=True,
-            softmax=True,
+            sigmoid=True,
         )
     elif loss_type == "dicefocal":
         return DiceFocalLoss(
             include_background=False,
             to_onehot_y=True,
-            softmax=True,
+            sigmoid=True,
             gamma=2.0,
             lambda_dice=1.0,
             lambda_focal=2.0,
@@ -133,7 +127,7 @@ def build_loss_fn_binary(loss_type="dicece"):
         return TverskyLoss(
             include_background=False,
             to_onehot_y=True,
-            softmax=True,
+            sigmoid=True,
             alpha=alpha,
             beta=beta,
         )
@@ -278,97 +272,6 @@ def train_one_epoch_binary(
 
     return running / max(1, n)
 
-
-def train_one_epoch(
-    model,
-    loader,
-    optimizer,
-    device,
-    scaler=None,
-    loss_type="dicece",
-    epoch=None,
-    epochs=None,
-):
-    """
-    alpha:weight of the false positives
-    beta:weight of the false negatives
-    """
-    model.train()
-    alpha = 0.3
-    beta = 0.7
-
-    if loss_type == "dicece":
-        loss_fn = DiceCELoss(include_background=False, to_onehot_y=True, softmax=True)
-    elif loss_type == "dicefocal":
-        loss_fn = DiceFocalLoss(
-            include_background=False,
-            to_onehot_y=True,
-            softmax=True,
-            gamma=2.0,
-            lambda_dice=1.0,
-            lambda_focal=2.0,
-        )
-    elif loss_type == "tversky":
-        loss_fn = TverskyLoss(
-            include_background=False,
-            to_onehot_y=True,
-            softmax=True,
-            alpha=alpha,
-            beta=beta,
-        )
-    else:
-        raise ValueError(f"Unknown loss type: {loss_type}")
-
-    running = 0.0
-    n = len(loader)
-
-    # 使用print直接显示 epoch 和训练进度
-    print(f"Epoch {epoch}/{epochs} training:")
-
-    for step, batch in enumerate(loader, start=1):
-        if step == 1:
-            _debug_batch_type(batch)
-        while isinstance(batch, list):
-            batch = batch[0]
-        x = batch["image"].to(device)
-        y = batch["label"].to(device)
-        if y.ndim == 4:
-            y = y.unsqueeze(1)
-        y = y.long().to(device)
-
-        # 可选:只在前5个batch打印label情况(避免刷屏)
-        if step <= 3:
-            yy = y[:, 0]
-            u = torch.unique(yy).detach().cpu().tolist()
-            tumor_vox = int((yy == 2).sum().item())
-            liver_vox = int((yy == 1).sum().item())
-            print(
-                f"[debug] batch {step}: unique={u} tumor_vox={tumor_vox} liver_vox={liver_vox}"
-            )
-
-        optimizer.zero_grad(set_to_none=True)
-
-        if scaler is None:
-            logits = model(x)
-            loss = loss_fn(logits, y)
-            loss.backward()
-            optimizer.step()
-        else:
-            with torch.autocast(device_type="cuda", dtype=torch.float16):
-                logits = model(x)
-                loss = loss_fn(logits, y)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-        running += float(loss.item())
-
-        # 每20个batch打印一次loss,控制输出频率
-        if step % 10 == 0:
-            print(f"[train] step={step}/{len(loader)} loss={float(loss.item()):.4f}")
-
-    # 计算并返回当前epoch的平均loss
-    return running / max(1, n)
 
 
 def validate_sliding_window(

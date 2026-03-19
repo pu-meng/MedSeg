@@ -8,8 +8,8 @@ import os
 import glob
 import argparse
 import numpy as np
-import nibabel as nib
-from tqdm import tqdm
+
+
 
 
 def estimate_vram_gb(patch_size, num_classes=3, base_channels=32, num_levels=4):
@@ -91,7 +91,7 @@ def main():
     p.add_argument(
         "--data_root",
         type=str,
-        default="/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task03_Liver_0.88mm",
+        default="/home/pumengyu/Task03_Liver",
     )
     p.add_argument(
         "--vram_gb",
@@ -112,11 +112,9 @@ def main():
     print(f"共 {len(img_paths)} 个 case,开始统计图像尺寸...")
 
     sizes = []
-    for img_p in tqdm(img_paths):
-        nii = nib.load(img_p)
-        sizes.append(nii.shape[:3])
+   
 
-    sizes = np.array(sizes)
+    sizes = np.array(sizes)  #type:ignore
 
     median_size = np.median(sizes, axis=0)
     min_size = sizes.min(axis=0)

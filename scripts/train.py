@@ -28,7 +28,7 @@ from medseg.utils.ckpt import load_ckpt
 
 
 from medseg.models.build_model import build_model
-from medseg.engine.train_eval import train_one_epoch, validate_sliding_window
+from medseg.engine.train_eval import train_one_epoch_multiclass, validate_sliding_window
 
 from medseg.utils.ckpt import save_ckpt
 from medseg.tasks import get_task
@@ -326,7 +326,7 @@ def main():
             train_loader, _ = build_loaders_auto(
                 args, tr, va, use_offline, current_train_ratios
             )
-        train_loss = train_one_epoch(
+        train_loss = train_one_epoch_multiclass(
             model,
             train_loader,
             optim,

@@ -2,7 +2,7 @@ from medseg.data.msd import load_msd_dataset, fixed_split
 from medseg.data.transforms import build_train_transforms
 import nibabel as nib
 
-DATA_ROOT = "/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task03_Liver"
+DATA_ROOT = "/home/pumengyu/Task03_Liver"
 
 items, _ = load_msd_dataset(DATA_ROOT)
 tr, va = fixed_split(items, val_ratio=0.2, seed=0)
@@ -26,10 +26,10 @@ for i in [0, 1, 2]:
     outs = out if isinstance(out, list) else [out]
 
     for j, o in enumerate(outs):
-        y = o["label"]
+        y = o["label"]  # type:ignore
         if y.ndim == 4:
             y = y[0]  # [1, Z, Y, X] -> [Z, Y, X]
-        u = y.unique().cpu().tolist()
+        u = y.unique().cpu().tolist()  # type:ignore
         tumor = int((y == 2).sum().item())
         liver = int((y == 1).sum().item())
         print(
