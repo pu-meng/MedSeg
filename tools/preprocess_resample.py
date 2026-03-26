@@ -14,8 +14,8 @@ from monai.data import Dataset, DataLoader
 
 
 def main():
-    src = "/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task03_Liver"
-    dst = "/home/pumengyu/First2TB/PuMengYu/CT/segmentation/Task03_Liver_0.88mm"
+    src = "/home/pumengyu/Task03_Liver"
+    dst = "/home/pumengyu/Task03_Liver_0.88mm"
     pixdim = (0.88, 0.88, 0.88)
 
     os.makedirs(os.path.join(dst, "imagesTr"), exist_ok=True)

@@ -2,14 +2,15 @@
 calc_patch.py
 统计数据集图像尺寸,根据显存推荐合适的 patch size
 用法:python calc_patch.py --data_root /path/to/Task03_Liver_0p88mm --vram_gb 11
+import glob这里的glob是批量找文件
+
 """
 
 import os
 import glob
 import argparse
 import numpy as np
-
-
+import nibabel as nib
 
 
 def estimate_vram_gb(patch_size, num_classes=3, base_channels=32, num_levels=4):
@@ -29,25 +30,32 @@ def estimate_vram_gb(patch_size, num_classes=3, base_channels=32, num_levels=4):
     decoder 和 encoder 对称,再乘以 2.
     再加上梯度(×2)和优化器状态 AdamW(×2)
     总系数大概是 ×6.
+    num_levels=4默认按照4层encoder/decoder结构估算
     """
     d, h, w = patch_size
     channels = base_channels
     total_voxels = 0
 
     for level in range(num_levels):
+        # 这个是遍历每一层
+        current_channels = base_channels * (2**level)
         scale = 2**level
-        level_voxels = (d // scale) * (h // scale) * (w // scale) * channels * scale
+        level_voxels = (d // scale) * (h // scale) * (w // scale) * current_channels
+
         total_voxels += level_voxels  # encoder
         total_voxels += level_voxels  # decoder (skip connection)
         channels = min(channels * 2, 320)  # nnUNet cap at 320
-
+#设计不大于320,只是nnunet的一个常见的设计习惯
+#每个元素按照flozt32算字节数,一个float32=4个字节
     bytes_per_voxel = 4  # float32
     forward_bytes = total_voxels * bytes_per_voxel
     # ×6: 前向 + 反向梯度 + AdamW 两份动量
     total_bytes = forward_bytes * 6
+    #这个的乘以6是估算,
     # 加上模型权重本身(固定约 800MB)
+    
     total_bytes += 800 * 1024**2
-
+#1KB=1024 B,1MB=1024KB,1GB=1024MB
     return total_bytes / (1024**3)
 
 
@@ -55,14 +63,17 @@ def calc_patch_size(median_size, vram_gb, num_classes=3):
     """
     从 median_size 出发,逐步缩小直到显存估算 < vram_gb * 0.85
     (留 15% 余量给数据 IO 和其他进程)
+
+    clac_patch_size是已知数据集典型尺寸median_size,和显存大小vram_gb,找一个不爆显存的patch
+
     """
     budget_gb = vram_gb * 0.85
-
+#这个乘以0.85是留15%余量给数据 IO 和其他进程
     d = int((median_size[0] // 16) * 16)
     h = int((median_size[1] // 16) * 16)
     w = int((median_size[2] // 16) * 16)
 
-    # 不能超过 median_size
+    # 不能超过 median_size,只是保险
     d = min(d, int(median_size[0]))
     h = min(h, int(median_size[1]))
     w = min(w, int(median_size[2]))
@@ -76,7 +87,10 @@ def calc_patch_size(median_size, vram_gb, num_classes=3):
         # 每次缩小最长的轴,步长 16
         dims = [d, h, w]
         max_ax = int(np.argmax(dims))
+        #np.argmax(dims)返回最大值的索引
         dims[max_ax] = max(dims[max_ax] - 16, 16)
+        #把最长轴缩小16,但不能低于16,比如[144,224,192]变成[144,208,192]
+
         d, h, w = dims
 
         # 防止无限循环
@@ -112,12 +126,18 @@ def main():
     print(f"共 {len(img_paths)} 个 case,开始统计图像尺寸...")
 
     sizes = []
+
+  
+    for p in img_paths:
+        img = nib.load(p)
+        sizes.append(img.shape)
+    sizes = np.array(sizes)  # type:ignore
    
-
-    sizes = np.array(sizes)  #type:ignore
-
+#np.median(,axis=0)意思是按照样本维度计算中位值,
+#每个case有[D,H,W],分别算D,H,W的中位值
     median_size = np.median(sizes, axis=0)
     min_size = sizes.min(axis=0)
+    #sizes.min(axis=0)是得到每个维度的最小值
     max_size = sizes.max(axis=0)
 
     print("\n========== 图像尺寸统计(预处理后)==========")

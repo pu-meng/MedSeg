@@ -26,16 +26,9 @@ import glob
 import argparse
 import numpy as np
 
-try:
-    from tqdm import tqdm
-
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-
-    def tqdm(x, **kwargs):
-        return x
-
+from tqdm import tqdm
+import nibabel as nib
+ 
 
 def load_label_from_pt(pt_path):
     """从 .pt 文件加载 label tensor,转为 numpy"""
@@ -51,7 +44,7 @@ def load_label_from_pt(pt_path):
 
 def load_label_from_nii(nii_path):
     """从 .nii.gz 文件加载 label,转为 numpy"""
-    import nibabel as nib
+
 
     return nib.load(nii_path).get_fdata(dtype=np.float32).astype(np.int32)
 
@@ -95,12 +88,17 @@ def compute_stats(label_paths, load_fn, num_classes):
 
         for c in range(num_classes):
             cnt = int((lab == c).sum())
+            #cnt是当前类别c在当前case中出现的体素数
             class_total_vox[c] += cnt
             if cnt > 0:
                 class_case_count[c] += 1
                 class_vox_when_present[c].append(cnt)
 
     return class_total_vox, class_case_count, class_vox_when_present
+#class_total_vox是每个类别的总共多少体素
+#class_case_count是每个类别出现在多少个case中
+#class_vox_when_present给每个类别准备一个列表,记录"它每次出现时的体素数"
+#class_vox_when_present[0]:背景在每个case中的体素数列表
 
 
 def recommend_ratios(class_total_vox, class_case_count, n_cases, num_classes):
@@ -122,10 +120,15 @@ def recommend_ratios(class_total_vox, class_case_count, n_cases, num_classes):
     fg_vox = class_total_vox[1:].astype(np.float64)
     fg_cases = class_case_count[1:].astype(np.float64)
     n_fg = len(fg_vox)
+    #这里的fg_vox是列表,储存有每个前景类别的总体素数
+    #fg_cases=[131,121]表示liver出现在131个case,tumor出现在121个case
+    
 
     # 保护:防止除零
     fg_vox = np.maximum(fg_vox, 1.0)
-    fg_cases = np.maximum(fg_cases, 1.0)
+    #np.maximum([a,b,c],1.0)=[max(a,1.0),max(b,1.0),max(c,1.0)]
+
+    fg_cases = np.maximum(fg_cases,1.0)
 
     # 体素占比
     vox_ratio = fg_vox / fg_vox.sum()
@@ -141,7 +144,8 @@ def recommend_ratios(class_total_vox, class_case_count, n_cases, num_classes):
 
     # Stage1:把最大类别权重抬高(让模型先学好它)
     # 找最大体素类别(通常是liver=index 0 in fg)
-    biggest_fg_idx = int(np.argmax(fg_vox))  # 通常是0(liver)
+    biggest_fg_idx = int(np.argmax(fg_vox))
+      #biggeest_fg_idx找到fg_vox的体素最多的索引
     s1 = inv_normalized.copy()
     # 重新分配:biggest类给50%,其余按反比分剩余50%
     s1_boost = np.zeros(n_fg)

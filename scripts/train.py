@@ -28,7 +28,7 @@ from medseg.utils.ckpt import load_ckpt
 
 
 from medseg.models.build_model import build_model
-from medseg.engine.train_eval import train_one_epoch_multiclass, validate_sliding_window
+from medseg.engine.train_eval import train_one_epoch_softmax, validate_sliding_window
 
 from medseg.utils.ckpt import save_ckpt
 from medseg.tasks import get_task
@@ -155,14 +155,14 @@ def parse_args():
         "--early_ratios",
         type=float,
         nargs=2,
-        default=[0.0, 1.0],
+        default=[0.1, 0.9],
         help="前半段采样比例 背景/前景,前景包括肝脏和肿瘤",
     )
     p.add_argument(
         "--late_ratios",
         type=float,
         nargs=2,
-        default=[0.0, 1.0],
+        default=[0.1, 0.9],
         help="后半段采样比例 背景/前景,前景包括肝脏和肿瘤",
     )
     p.add_argument("--test_ratio", type=float, default=0.1)
@@ -172,12 +172,12 @@ def parse_args():
         type=int,
         nargs=3,
         default=None,
-        help="验证滑窗roi_size；不传则默认等于patch",
+        help="验证滑窗roi_size;不传则默认等于patch",
     )
     p.add_argument(
         "--merge_label12_to1",
         action="store_true",
-        help="将label中的1和2合并为1，用于liver-only二分类训练",
+        help="将label中的1和2合并为1,用于liver-only二分类训练",
     )
 
     return p.parse_args()
@@ -306,6 +306,9 @@ def main():
     train_loader, val_loader = build_loaders_auto(
         args, tr, va, use_offline, train_ratios=init_ratios
     )
+    # build_loaders_auto如果离线就是build_loaders_offline,在线就是build_loaders
+    # build_loaders_offline接收args.merge_label12_to1
+
     current_train_ratios = init_ratios
 
     for epoch in range(start_epoch, args.epochs + 1):
@@ -326,7 +329,16 @@ def main():
             train_loader, _ = build_loaders_auto(
                 args, tr, va, use_offline, current_train_ratios
             )
-        train_loss = train_one_epoch_multiclass(
+        if int(args.num_classes) == 2:
+            if args.merge_label12_to1:
+                print("使用 2 类 softmax 分割: background vs merged(liver+tumor)")
+            else:
+                print("使用 2 类 softmax 分割: background vs class-1")
+        else:
+            print("使用 3 类 softmax 分割: background vs liver vs tumor")
+
+        # 我加入merge_label12_to1参数，之后
+        train_loss = train_one_epoch_softmax(
             model,
             train_loader,
             optim,

@@ -79,7 +79,8 @@ def save_cmd(out_dir: str, filename: str = "cmd.txt") -> str:
         groups.append(cur)
 
     with open(path, "w", encoding="utf-8") as f:
-        f.write(f"{cuda_prefix}python -m scripts.train \\\n")
+        script = sys.argv[0]
+        f.write(f"{cuda_prefix}python {script} \\\n")
         for i, grp in enumerate(groups):
             line = " ".join(grp)
             end = " \\\n" if i < len(groups) - 1 else "\n"

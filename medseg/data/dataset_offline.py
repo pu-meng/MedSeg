@@ -133,7 +133,7 @@ class OfflineDataset(Dataset):
 
 def load_pt_paths(preprocessed_dir: str, n: int = 0) -> list:
     """
-    返回的是路径列表
+    返回的是路径列表,
     """
     paths = sorted(glob.glob(os.path.join(preprocessed_dir, "*.pt")))
     if len(paths) == 0:
@@ -144,7 +144,9 @@ def load_pt_paths(preprocessed_dir: str, n: int = 0) -> list:
 
 
 def split_pt_paths(pt_paths: list, val_ratio: float = 0.2, seed: int = 0):
+
     import random
+
 
     rng = random.Random(seed)
     paths = pt_paths[:]
@@ -158,6 +160,10 @@ def split_pt_paths(pt_paths: list, val_ratio: float = 0.2, seed: int = 0):
 def split_three_ways(
     pt_paths: list, test_ratio: float = 0.1, val_ratio: float = 0.2, seed: int = 0
 ):
+    """
+    split_three_ways函数的作用是将pt_paths列表中的数据按照test_ratio和val_ratio的比例分割成三个部分，分别是训练集、验证集和测试集。
+    这个函数应该是two-stage的两个阶段的唯一的数据分割函数,确保分割比例一致
+    """
     import random
 
     rng = random.Random(seed)

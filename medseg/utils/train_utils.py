@@ -17,7 +17,7 @@ def set_seed(seed: int):
 
 
 def get_stage_ratios(
-    epoch: int, epochs: int, early_ratios=(0.0, 1.0), late_ratios=(0.0, 1.0)
+    epoch: int, epochs: int, early_ratios=(0.1, 0.9), late_ratios=(0.1, 0.9)
 ):
     """
     early_ratios: 前半段使用的采样比例

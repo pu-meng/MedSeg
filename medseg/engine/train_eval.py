@@ -135,7 +135,7 @@ def build_loss_fn_binary(loss_type="dicece"):
         raise ValueError(f"Unknown loss type: {loss_type}")
 
 
-def train_one_epoch_multiclass(
+def train_one_epoch_softmax(
     model,
     loader,
     optimizer,
@@ -201,7 +201,7 @@ def train_one_epoch_multiclass(
     return running / max(1, n)
 
 
-def train_one_epoch_binary(
+def train_one_epoch_sigmoid_binary(
     model,
     loader,
     optimizer,
@@ -271,7 +271,6 @@ def train_one_epoch_binary(
             )
 
     return running / max(1, n)
-
 
 
 def validate_sliding_window(
