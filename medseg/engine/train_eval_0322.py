@@ -112,22 +112,22 @@ def build_loss_fn_binary(loss_type="dicece"):
         return DiceCELoss(
             include_background=False,
             to_onehot_y=True,
-            softmax=True,
+            sigmoid=True,
         )
     elif loss_type == "dicefocal":
         return DiceFocalLoss(
             include_background=False,
             to_onehot_y=True,
-            softmax=True,
+            sigmoid=True,
             gamma=2.0,
             lambda_dice=1.0,
-            lambda_focal=1.0,
+            lambda_focal=2.0,
         )
     elif loss_type == "tversky":
         return TverskyLoss(
             include_background=False,
             to_onehot_y=True,
-            softmax=True,
+            sigmoid=True,
             alpha=alpha,
             beta=beta,
         )
@@ -135,7 +135,7 @@ def build_loss_fn_binary(loss_type="dicece"):
         raise ValueError(f"Unknown loss type: {loss_type}")
 
 
-def train_one_epoch_softmax(
+def train_one_epoch_multiclass(
     model,
     loader,
     optimizer,
@@ -149,8 +149,7 @@ def train_one_epoch_softmax(
     loss_fn = build_loss_fn_multiclass(loss_type)
 
     running = 0.0
-    n_valid = 0
-    n_nan = 0
+    n = len(loader)
 
     print(f"Epoch {epoch}/{epochs} training (multiclass):")
 
@@ -182,43 +181,27 @@ def train_one_epoch_softmax(
         if scaler is None:
             logits = model(x)
             loss = loss_fn(logits, y)
-            if torch.isnan(loss) or torch.isinf(loss):
-                n_nan += 1
-                print(f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})")
-                optimizer.zero_grad(set_to_none=True)
-                continue
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
         else:
             with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True):
                 logits = model(x)
-            loss = loss_fn(logits.float(), y)
-            if torch.isnan(loss) or torch.isinf(loss):
-                n_nan += 1
-                print(f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})")
-                optimizer.zero_grad(set_to_none=True)
-                continue
+                loss = loss_fn(logits, y)
             scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             scaler.step(optimizer)
             scaler.update()
 
         running += float(loss.item())
-        n_valid += 1
 
         if step % 10 == 0:
             print(
                 f"[train-multi] step={step}/{len(loader)} loss={float(loss.item()):.4f}"
             )
 
-    if n_nan > 0:
-        print(f"[warn] epoch had {n_nan} NaN/Inf batches skipped out of {n_valid + n_nan} total")
-    return running / max(1, n_valid)
+    return running / max(1, n)
 
 
-def train_one_epoch_sigmoid_binary(
+def train_one_epoch_binary(
     model,
     loader,
     optimizer,
@@ -232,8 +215,7 @@ def train_one_epoch_sigmoid_binary(
     loss_fn = build_loss_fn_binary(loss_type)
 
     running = 0.0
-    n_valid = 0
-    n_nan = 0
+    n = len(loader)
 
     print(f"Epoch {epoch}/{epochs} training (binary tumor):")
 
@@ -250,8 +232,13 @@ def train_one_epoch_sigmoid_binary(
         if y.ndim == 4:
             y = y.unsqueeze(1)
         y = y.long()
+        u = torch.unique(y)
+        if not torch.all((u == 0) | (u == 1)):
+            raise ValueError(
+                f"Binary tumor training expects labels in {{0,1}}, but got {u.detach().cpu().tolist()}"
+            )
 
-        # 二分类强约束: 标签只能是 0/1（仅前3个step检查，避免每step cuda sync拖慢训练）
+        # 二分类强约束: 标签只能是 0/1
         if step <= 3:
             yy = y[:, 0]
             u = torch.unique(yy).detach().cpu().tolist()
@@ -260,50 +247,31 @@ def train_one_epoch_sigmoid_binary(
             print(
                 f"[debug-binary] batch {step}: unique={u} bg_vox={bg_vox} tumor_vox={tumor_vox}"
             )
-            if not all(v in (0, 1) for v in u):
-                raise ValueError(
-                    f"Binary tumor training expects labels in {{0,1}}, but got {u}"
-                )
 
         optimizer.zero_grad(set_to_none=True)
 
         if scaler is None:
             logits = model(x)
             loss = loss_fn(logits, y)
-            if torch.isnan(loss) or torch.isinf(loss):
-                n_nan += 1
-                print(f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})")
-                optimizer.zero_grad(set_to_none=True)
-                continue
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
         else:
             with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True):
                 logits = model(x)
-            loss = loss_fn(logits.float(), y)
-            if torch.isnan(loss) or torch.isinf(loss):
-                n_nan += 1
-                print(f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})")
-                optimizer.zero_grad(set_to_none=True)
-                continue
+                loss = loss_fn(logits, y)
             scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             scaler.step(optimizer)
             scaler.update()
 
         running += float(loss.item())
-        n_valid += 1
 
         if step % 10 == 0:
             print(
                 f"[train-binary] step={step}/{len(loader)} loss={float(loss.item()):.4f}"
             )
 
-    if n_nan > 0:
-        print(f"[warn] epoch had {n_nan} NaN/Inf batches skipped out of {n_valid + n_nan} total")
-    return running / max(1, n_valid)
+    return running / max(1, n)
+
 
 
 def validate_sliding_window(

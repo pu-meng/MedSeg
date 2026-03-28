@@ -42,7 +42,7 @@ class LearnableWeightedLoss(torch.nn.Module):
         self.log_alpha = torch.nn.Parameter(torch.tensor(float(init_alpha)))
 
         # base_loss：具体的损失函数实例（DiceCELoss / DiceFocalLoss / TverskyLoss）
-        # 内部设置 include_background=False + sigmoid=True，对二分类前景计算损失
+        # 内部设置 include_background=False + softmax=True，对二分类前景计算损失
         self.base_loss = build_loss_fn_binary(base_loss_type)
 
     def forward(self, logits: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -154,11 +154,11 @@ def train_one_epoch_binary_learnable(
             criterion_optimizer.step()
         else:
             # ── 使用 AMP（混合精度） ─────────────────────────────────────────
-            # autocast：forward 在 float16 下运行，节省显存并加速矩阵运算
-            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True):
+            # autocast：forward 在 bfloat16 下运行，节省显存并加速矩阵运算
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
                 logits = model(x)
                 loss = criterion(logits, y)
-            # scaler.scale：loss 乘以缩放因子，防止 float16 梯度下溢为 0
+            # scaler.scale：loss 乘以缩放因子（bfloat16 动态范围大，通常无需缩放，但保持接口兼容）
             scaler.scale(loss).backward()
             scaler.step(optimizer)           # 反缩放梯度 + 更新模型参数
             scaler.step(criterion_optimizer) # 反缩放梯度 + 更新 log_alpha

@@ -43,7 +43,7 @@ def build_train_transforms(patch_size=(144, 144, 144), ratios=(0.0, 1.0)):
                 label_key="label",
                 spatial_size=patch_size,
                 num_classes=2,  # 0=背景, 1=前景(肝脏+肿瘤)/或者0=肝脏,1=肿瘤
-                num_samples=2,  # 每个病例切2个patch，互补覆盖大肿瘤，配合list_data_collate使用
+                num_samples=1,  # 每个病例切1个patch
                 ratios=list(ratios),  # tumor占更大比例
                 allow_smaller=True,
             ),
