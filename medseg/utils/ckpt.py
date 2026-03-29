@@ -30,7 +30,11 @@ def load_ckpt(path, model, optimizer=None, map_location="cpu"):
     是恢复优化器状态
     """
     ckpt = torch.load(path, map_location=map_location, weights_only=True)
-    model.load_state_dict(ckpt["model"], strict=True)
+    state_dict = ckpt["model"]
+    # torch.compile saves weights with "_orig_mod." prefix; strip it for non-compiled models
+    if any(k.startswith("_orig_mod.") for k in state_dict):
+        state_dict = {k.removeprefix("_orig_mod."): v for k, v in state_dict.items()}
+    model.load_state_dict(state_dict, strict=True)
     if optimizer is not None and "optim" in ckpt:
         optimizer.load_state_dict(ckpt["optim"])
     return ckpt
@@ -87,7 +91,10 @@ def load_ckpt_full(
 
     ckpt = torch.load(path, map_location=map_location, weights_only=False)
 
-    model.load_state_dict(ckpt["model"], strict=True)
+    state_dict = ckpt["model"]
+    if any(k.startswith("_orig_mod.") for k in state_dict):
+        state_dict = {k.removeprefix("_orig_mod."): v for k, v in state_dict.items()}
+    model.load_state_dict(state_dict, strict=True)
 
     if optimizer is not None and "optim" in ckpt:
         optimizer.load_state_dict(ckpt["optim"])
