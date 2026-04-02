@@ -181,4 +181,38 @@ def split_three_ways(
     return tr, va, te
 
 
+# nnUNet fold0 固定验证集（liver_002,005,...,121，去前导零）
+# 来源：/home/pumengyu/nnUNet_result/fold_0/validation_raw_postprocessed/summary.json
+_NNUNET_FOLD0_VAL = {
+    "liver_2","liver_5","liver_9","liver_12","liver_18","liver_28",
+    "liver_44","liver_49","liver_57","liver_58","liver_60","liver_64",
+    "liver_69","liver_81","liver_94","liver_98","liver_101","liver_117","liver_121",
+}
+# test集固定：原split_three_ways(seed=0)的结果
+_FIXED_TEST = {
+    "liver_107","liver_15","liver_27","liver_36","liver_37","liver_4",
+    "liver_40","liver_7","liver_71","liver_77","liver_78","liver_87","liver_92",
+}
+
+
+def split_fixed(pt_paths: list):
+    """
+    固定划分，val对齐nnUNet fold0验证集，保证指标可直接比较。
+
+    val: 19个，与nnUNet fold0完全一致
+    test: 13个，原split_three_ways(seed=0)的test集
+    train: 剩余99个
+
+    用法：tr, va, te = split_fixed(all_pt)
+    """
+    import os
+
+    va = [p for p in pt_paths if os.path.basename(p).replace(".pt", "") in _NNUNET_FOLD0_VAL]
+    te = [p for p in pt_paths if os.path.basename(p).replace(".pt", "") in _FIXED_TEST]
+    tr = [p for p in pt_paths if
+          os.path.basename(p).replace(".pt", "") not in _NNUNET_FOLD0_VAL and
+          os.path.basename(p).replace(".pt", "") not in _FIXED_TEST]
+    return tr, va, te
+
+
 # /home/pumengyu/medseg_project/medseg/utils/train_utils.py

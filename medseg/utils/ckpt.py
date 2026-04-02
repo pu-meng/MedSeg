@@ -31,9 +31,12 @@ def load_ckpt(path, model, optimizer=None, map_location="cpu"):
     """
     ckpt = torch.load(path, map_location=map_location, weights_only=True)
     state_dict = ckpt["model"]
-    # torch.compile saves weights with "_orig_mod." prefix; strip it for non-compiled models
-    if any(k.startswith("_orig_mod.") for k in state_dict):
+    ckpt_has_prefix = any(k.startswith("_orig_mod.") for k in state_dict)
+    model_has_prefix = any(k.startswith("_orig_mod.") for k in model.state_dict())
+    if ckpt_has_prefix and not model_has_prefix:
         state_dict = {k.removeprefix("_orig_mod."): v for k, v in state_dict.items()}
+    elif not ckpt_has_prefix and model_has_prefix:
+        state_dict = {"_orig_mod." + k: v for k, v in state_dict.items()}
     model.load_state_dict(state_dict, strict=True)
     if optimizer is not None and "optim" in ckpt:
         optimizer.load_state_dict(ckpt["optim"])
@@ -92,8 +95,12 @@ def load_ckpt_full(
     ckpt = torch.load(path, map_location=map_location, weights_only=False)
 
     state_dict = ckpt["model"]
-    if any(k.startswith("_orig_mod.") for k in state_dict):
+    ckpt_has_prefix = any(k.startswith("_orig_mod.") for k in state_dict)
+    model_has_prefix = any(k.startswith("_orig_mod.") for k in model.state_dict())
+    if ckpt_has_prefix and not model_has_prefix:
         state_dict = {k.removeprefix("_orig_mod."): v for k, v in state_dict.items()}
+    elif not ckpt_has_prefix and model_has_prefix:
+        state_dict = {"_orig_mod." + k: v for k, v in state_dict.items()}
     model.load_state_dict(state_dict, strict=True)
 
     if optimizer is not None and "optim" in ckpt:

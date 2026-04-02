@@ -332,7 +332,6 @@ def validate_sliding_window(
 
     model.eval()
 
-    eps = 1e-8
     class_ids = list(range(1, num_classes))
     sum_dice = torch.zeros(len(class_ids), device="cpu", dtype=torch.float64)
     n_batches = 0
@@ -373,7 +372,8 @@ def validate_sliding_window(
                 inter = (p & g).sum(dim=(1, 2, 3)).double()
                 denom = p.sum(dim=(1, 2, 3)).double() + g.sum(dim=(1, 2, 3)).double()
 
-                d = (2.0 * inter + eps) / (denom + eps)
+                # denom==0 表示预测和标签都为空（如无肿瘤case且预测也无肿瘤），视为完美预测dice=1.0
+                d = torch.where(denom == 0, torch.ones_like(inter), 2.0 * inter / denom)
 
                 dices.append(d.mean().detach().cpu())
 

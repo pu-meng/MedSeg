@@ -1,291 +1,383 @@
-import os
-import time
-import json
+from __future__ import annotations
+
 import argparse
+import csv
+import glob
+import json
+import os
+import sys
+import time
+from typing import Dict, List
+
+import scipy.ndimage as ndi
 import torch
+from monai.inferers.utils import sliding_window_inference
 
-from medseg.utils.io_utils import save_cmd, save_json, save_report
-from medseg.data.msd import load_msd_dataset
-from medseg.data.build_loader import build_loaders
 from medseg.models.build_model import build_model
-from medseg.engine.train_eval import validate_sliding_window
 from medseg.utils.ckpt import load_ckpt
-from medseg.utils.warnings import setup_warnings
-from medseg.tasks import get_task
-
-from medseg.data.build_loader import build_loaders_offline
-from medseg.data.dataset_offline import load_pt_paths
 from medseg.data.dataset_offline import split_three_ways
 
-setup_warnings()
-
-# 你机器上的默认路径（自用省事）
-DEFAULT_DATA_ROOT = "/home/pumengyu/Task03_Liver_pt"
-DEFAULT_EXP_ROOT = "/home/pumengyu/experiments"
 
 
-def pick_arg(cli_value, train_cfg, key, default=None, cast_fn=None):
-    """
-    优先级：
-    1) 命令行传入
-    2) train config
-    3) 硬编码默认值
-    """
-    if cli_value is not None:
-        value = cli_value
-    elif key in train_cfg and train_cfg[key] is not None:
-        value = train_cfg[key]
-    else:
-        value = default
+from twostage_medseg.metrics.filter import filter_largest_component
+from twostage_medseg.metrics.metrics_utils import (
+    compute_metrics,
+    summarize_metrics_list,
+)
+from twostage_medseg.twostage.vis_utils import save_case_visualization
 
-    if cast_fn is not None and value is not None:
-        value = cast_fn(value)
-    return value
+_twostage_root = "/home/pumengyu"
+if _twostage_root not in sys.path:
+    sys.path.insert(0, _twostage_root)
+
+
+# ------------------------------------------------------------------ #
+# args
+# ------------------------------------------------------------------ #
 
 
 def parse_args():
     p = argparse.ArgumentParser()
-
-    p.add_argument("--task", type=str, default="liver", choices=["heart", "liver"])
-    p.add_argument("--data_root", type=str, default=None)
-    p.add_argument("--num_classes", type=int, default=None)
-
     p.add_argument("--ckpt", type=str, required=True)
+    p.add_argument("--preprocessed_root", type=str, default=None)
     p.add_argument("--model", type=str, default=None)
-
-    p.add_argument("--val_ratio", type=float, default=None)
-    p.add_argument("--test_ratio", type=float, default=None)
+    p.add_argument("--num_classes", type=int, default=None)
     p.add_argument("--patch", type=int, nargs=3, default=None)
     p.add_argument("--sw_batch_size", type=int, default=None)
     p.add_argument("--overlap", type=float, default=None)
-
-    p.add_argument("--num_workers", type=int, default=None)
-    p.add_argument("--cache_rate", type=float, default=None)
+    p.add_argument("--val_ratio", type=float, default=None)
+    p.add_argument("--test_ratio", type=float, default=None)
     p.add_argument("--seed", type=int, default=None)
-
-    p.add_argument("--exp_root", type=str, default=DEFAULT_EXP_ROOT)
-    p.add_argument("--exp_name", type=str, required=True)
-    p.add_argument("--out_dir", type=str, default=None)
-
     p.add_argument(
-        "--preprocessed_root",
+        "--split",
+        type=str,
+        default="test",
+        choices=["train", "val", "test", "all"],
+    )
+    p.add_argument("--n", type=int, default=0, help="只跑前N个case,0=全部")
+    p.add_argument("--min_tumor_size", type=int, default=100)
+    p.add_argument(
+        "--tta", action="store_true", help="测试时增强:8种翻转组合推理取平均"
+    )
+    p.add_argument("--save_vis", action="store_true", help="保存可视化PNG")
+    p.add_argument("--vis_n", type=int, default=10, help="最多保存前N个case的可视化")
+    p.add_argument(
+        "--save_pred_pt", action="store_true", help="保存每个case的预测结果.pt"
+    )
+    p.add_argument(
+        "--save_dir",
         type=str,
         default=None,
-        help="如果传入则走离线 .pt 模式，否则走原始 .nii.gz 模式",
+        help="结果保存目录，默认自动推导为 <exp_dir>/eval/<timestamp>",
     )
-
     return p.parse_args()
 
 
-def load_train_config(train_config_path):
-    if os.path.isfile(train_config_path):
-        with open(train_config_path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-            # 把文件里面的json文本解析成Python对象，cfg是一个dict
-        print("Loaded train config:", train_config_path)
-        return cfg
-    return {}
-
-
-def resolve_args(args, train_cfg, task_cfg):
-    args.data_root = pick_arg(
-        args.data_root, train_cfg, "data_root", task_cfg["data_root"], str
-    )
-    args.num_classes = pick_arg(
-        args.num_classes, train_cfg, "num_classes", int(task_cfg["num_classes"]), int
-    )
-
-    args.val_ratio = pick_arg(args.val_ratio, train_cfg, "val_ratio", 0.2, float)
-    args.test_ratio = pick_arg(args.test_ratio, train_cfg, "test_ratio", 0.1, float)
-    args.seed = pick_arg(args.seed, train_cfg, "seed", 0, int)
-
-    args.patch = pick_arg(
-        args.patch, train_cfg, "patch", [96, 96, 96], lambda x: list(map(int, x))
-    )
-    args.model = pick_arg(args.model, train_cfg, "model", "unet3d", str)
-    args.sw_batch_size = pick_arg(
-        args.sw_batch_size, train_cfg, "sw_batch_size", 1, int
-    )
-    args.overlap = pick_arg(args.overlap, train_cfg, "overlap", 0.5, float)
-
-    args.num_workers = pick_arg(args.num_workers, train_cfg, "num_workers", 2, int)
-    args.cache_rate = pick_arg(args.cache_rate, train_cfg, "cache_rate", 0.0, float)
+def resolve_args(args):
+    ckpt_abs = os.path.abspath(args.ckpt)
+    run_dir = os.path.dirname(ckpt_abs)              # .../train/<timestamp>
+    timestamp = os.path.basename(run_dir)
+    exp_dir = os.path.dirname(os.path.dirname(run_dir))  # .../exp_name
 
     if args.preprocessed_root is None:
-        args.preprocessed_root = train_cfg.get("preprocessed_root", None)
+        raise ValueError("必须传 --preprocessed_root")
+    if args.model is None:
+        raise ValueError("必须传 --model")
+    if args.num_classes is None:
+        raise ValueError("必须传 --num_classes")
+    if args.patch is None:
+        raise ValueError("必须传 --patch")
+    if args.overlap is None:
+        raise ValueError("必须传 --overlap")
+    if args.val_ratio is None:
+        raise ValueError("必须传 --val_ratio")
+    if args.test_ratio is None:
+        raise ValueError("必须传 --test_ratio")
+    if args.seed is None:
+        raise ValueError("必须传 --seed")
 
-    print("Resolved eval args:")
-    print(f"  model={args.model}")
-    print(f"  patch={args.patch}")
-    print(f"  sw_batch_size={args.sw_batch_size}")
-    print(f"  overlap={args.overlap}")
-    print(f"  cache_rate={args.cache_rate}")
-    print(f"  num_workers={args.num_workers}")
-    print(f"  val_ratio={args.val_ratio}")
-    print(f"  seed={args.seed}")
-    print(f"  preprocessed_root={args.preprocessed_root}")
-    print(f"test_ratio={args.test_ratio}")
+    if args.save_dir is None:
+        args.save_dir = os.path.join(exp_dir, "eval", timestamp)
+    os.makedirs(args.save_dir, exist_ok=True)
 
-    return args
+    return args, timestamp
 
 
-def build_val_loader(args):
-    if args.preprocessed_root:
-        print(f"[离线模式] 读取 .pt 文件: {args.preprocessed_root}")
+# ------------------------------------------------------------------ #
+# inference helpers
+# ------------------------------------------------------------------ #
 
-        all_pt = load_pt_paths(args.preprocessed_root)
-        _, _, te_paths = split_three_ways(
-            all_pt, test_ratio=args.test_ratio, val_ratio=args.val_ratio, seed=args.seed
-        )
 
-        _, test_loader = build_loaders_offline(
-            [],
-            te_paths,
-            patch_size=tuple(args.patch),
-            batch_size=1,
-            num_workers=args.num_workers,
-        )
-        print(f"测试案例: {len(te_paths)}")
-        return test_loader
+def tta_infer(inputs, roi_size, sw_batch_size, predictor, overlap):
+    spatial_axes = [2, 3, 4]
+    flip_combos = [[]]
+    for ax in spatial_axes:
+        flip_combos += [c + [ax] for c in flip_combos]
 
-    print(f"[在线模式] 读取 .nii.gz: {args.data_root}")
-    items, _ = load_msd_dataset(args.data_root)
+    logits_sum = None
+    for axes in flip_combos:
+        x = torch.flip(inputs, dims=axes) if axes else inputs
+        out = sliding_window_inference(x, roi_size, sw_batch_size, predictor, overlap)
+        if isinstance(out, (tuple, list)):
+            out = out[0]
+        out = torch.as_tensor(out).float()
+        if axes:
+            out = torch.flip(out, dims=axes)
+        logits_sum = out if logits_sum is None else logits_sum + out
+    return logits_sum / len(flip_combos)
 
-    _, _, te = split_three_ways(
-        items, test_ratio=args.test_ratio, val_ratio=args.val_ratio, seed=args.seed
-    )
-    # 注意：build_loaders 需要 tr+va 两个参数，这里把 te 当 va 传进去
-    _, val_loader = build_loaders(
-        [],  # train 为空，只需要 val_loader
-        te,
-        patch_size=tuple(args.patch),
-        batch_size=1,
-        num_workers=args.num_workers,
-        cache_rate=args.cache_rate,
-    )
-    print(f"测试案例: {len(te)}")
 
-    return val_loader
+# ------------------------------------------------------------------ #
+# main
+# ------------------------------------------------------------------ #
 
 
 def main():
     args = parse_args()
-    task_cfg = get_task(args.task)
+    args, timestamp = resolve_args(args)
+
+    workdir = args.save_dir
+    pred_dir = None
+    vis_dir = None
+    if args.save_pred_pt:
+        pred_dir = os.path.join(workdir, "pred_pt")
+        os.makedirs(pred_dir, exist_ok=True)
+    if args.save_vis:
+        vis_dir = os.path.join(workdir, "vis_png")
+        os.makedirs(vis_dir, exist_ok=True)
+
+    # 保存运行命令
+    with open(os.path.join(workdir, "command.txt"), "w", encoding="utf-8") as f:
+        cuda_dev = os.environ.get("CUDA_VISIBLE_DEVICES", None)
+        prefix = f"CUDA_VISIBLE_DEVICES={cuda_dev} " if cuda_dev else ""
+        argv = sys.argv[:]
+        first_line = f"{prefix}{sys.executable} {argv[0]}"
+        lines = [first_line]
+        i = 1
+        while i < len(argv):
+            tok = argv[i]
+            if (
+                tok.startswith("--")
+                and i + 1 < len(argv)
+                and not argv[i + 1].startswith("--")
+            ):
+                vals = []
+                j = i + 1
+                while j < len(argv) and not argv[j].startswith("--"):
+                    vals.append(argv[j])
+                    j += 1
+                lines.append(f"  {tok} {' '.join(vals)}")
+                i = j
+            else:
+                lines.append(f"  {tok}")
+                i += 1
+        f.write(" \\\n".join(lines) + "\n")
+
+    # 数据划分
+    all_pt = sorted(glob.glob(os.path.join(args.preprocessed_root, "*.pt")))
+    if not all_pt:
+        raise FileNotFoundError(f"no .pt found in {args.preprocessed_root}")
+    tr, va, te = split_three_ways(
+        all_pt, test_ratio=args.test_ratio, val_ratio=args.val_ratio, seed=args.seed
+    )
+    pt_paths = {"train": tr, "val": va, "test": te, "all": all_pt}[args.split]
+    if args.n > 0:
+        pt_paths = pt_paths[: args.n]
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    ckpt_path = os.path.abspath(args.ckpt)
-    train_run_dir = os.path.dirname(ckpt_path)  # .../train/<timestamp>
-    train_ts = os.path.basename(train_run_dir)  # <timestamp>
-    train_parent = os.path.basename(os.path.dirname(train_run_dir))  # train
-
-    if train_parent != "train":
-        raise ValueError(f"ckpt must be under .../train/<timestamp>/, got: {ckpt_path}")
-
-    auto_out_dir = os.path.join(args.exp_root, args.exp_name, "eval", train_ts)
-    out_dir = args.out_dir if args.out_dir is not None else auto_out_dir
-    os.makedirs(out_dir, exist_ok=True)
-    print("Eval out_dir:", out_dir)
-
-    train_config_path = os.path.join(
-        args.exp_root, args.exp_name, "train", train_ts, "config.json"
-    )
-    train_cfg = load_train_config(train_config_path)
-    args = resolve_args(args, train_cfg, task_cfg)
-
-    val_loader = build_val_loader(args)
 
     model = build_model(
         args.model,
         in_channels=1,
-        out_channels=int(args.num_classes),
+        out_channels=args.num_classes,
         img_size=tuple(args.patch),
     ).to(device)
+    load_ckpt(args.ckpt, model, optimizer=None, map_location=device)
+    model.eval()
 
-    ckpt = load_ckpt(args.ckpt, model, optimizer=None, map_location=device)
-
-    if device == "cuda":
-        torch.cuda.synchronize()
-    t0 = time.time()
-
-    metrics = validate_sliding_window(
-        model,
-        val_loader,
-        device,
-        roi_size=tuple(args.patch),
-        sw_batch_size=args.sw_batch_size,
-        num_classes=int(args.num_classes),
-        overlap=args.overlap,
+    print(f"[eval] ckpt={args.ckpt}")
+    print(
+        f"[eval] model={args.model}  num_classes={args.num_classes}  patch={args.patch}"
     )
+    print(f"[eval] split={args.split}  n_cases={len(pt_paths)}  device={device}")
 
-    if device == "cuda":
-        torch.cuda.synchronize()
-    t1 = time.time()
+    liver_metrics_list: List[Dict] = []
+    tumor_metrics_list: List[Dict] = []
+    rows: List[Dict] = []
+    time_start = time.time()
 
-    total_sec = t1 - t0
-    n_cases = len(val_loader.dataset) if hasattr(val_loader, "dataset") else None  # type:ignore
-    sec_per_case = (total_sec / n_cases) if (n_cases and n_cases > 0) else None
+    with torch.no_grad():
+        for case_idx, pt_path in enumerate(pt_paths, start=1):
+            case_name = os.path.basename(pt_path).replace(".pt", "")
+            data = torch.load(
+                pt_path, map_location="cpu", weights_only=False, mmap=True
+            )
+            image = data["image"].float()  # [1,D,H,W]
+            label = data.get("label", None)  # [1,D,H,W] or None
 
-    val_mean = float(metrics["mean_fg"])
-    per_class = metrics["per_class"]
-    class_ids = metrics["class_ids"]
+            x = image.unsqueeze(0).to(device)  # [1,1,D,H,W]
 
-    gpu_name = torch.cuda.get_device_name(0) if device == "cuda" else "cpu"
-    train_epochs = train_cfg.get("epochs", "NA")
+            with torch.autocast(
+                device_type="cuda", dtype=torch.float16, enabled=(device == "cuda")
+            ):
+                if args.tta:
+                    logits = tta_infer(
+                        x, tuple(args.patch), args.sw_batch_size, model, args.overlap
+                    )
+                else:
+                    logits = sliding_window_inference(
+                        x, tuple(args.patch), args.sw_batch_size, model, args.overlap
+                    )
 
-    config = {
-        "task": args.task,
-        "exp_name": args.exp_name,
-        "exp_root": args.exp_root,
-        "out_dir": out_dir,
-        "train_epochs": train_epochs,
-        "ckpt": args.ckpt,
-        "model": args.model,
-        "data_root": args.data_root,
-        "num_classes": int(args.num_classes),
+            if isinstance(logits, (tuple, list)):
+                logits = logits[0]
+            logits = torch.as_tensor(logits).float()
+
+            pred = torch.argmax(logits, dim=1)[0].cpu()  # [D,H,W]
+
+            # 肝脏 mask（类别1），保留最大连通域
+            liver_mask = filter_largest_component(pred == 1)
+
+            # 肿瘤 mask（类别2，仅在 num_classes>=3 时有意义）
+            if args.num_classes >= 3:
+                raw_tumor = pred == 2
+                tumor_mask = raw_tumor & liver_mask  # 约束在肝脏内
+
+                # 去除小连通域
+                labeled, num = ndi.label(tumor_mask.cpu().numpy())
+                sizes = ndi.sum(tumor_mask.cpu().numpy(), labeled, range(1, num + 1))
+                clean = torch.zeros_like(tumor_mask)
+                for comp_idx, s in enumerate(sizes):
+                    if s > args.min_tumor_size:
+                        clean[labeled == (comp_idx + 1)] = 1
+                tumor_mask = clean.bool()
+            else:
+                tumor_mask = torch.zeros_like(liver_mask)
+
+            # 最终预测：0=背景，1=肝脏，2=肿瘤
+            final_pred = torch.zeros_like(pred, dtype=torch.long)
+            final_pred[liver_mask] = 1
+            final_pred[tumor_mask] = 2
+
+            row: Dict = {
+                "case_name": case_name,
+                "source_pt": os.path.basename(pt_path),
+                "pred_liver_voxels": int(liver_mask.sum().item()),
+                "pred_tumor_voxels": int(tumor_mask.sum().item()),
+            }
+
+            if label is not None:
+                gt = label[0].long()  # [D,H,W]
+                gt_liver = gt > 0
+                gt_tumor = gt == 2
+
+                liver_m = compute_metrics(final_pred > 0, gt_liver)
+                tumor_m = compute_metrics(final_pred == 2, gt_tumor)
+
+                row["liver_dice"] = round(liver_m["Dice"], 4)
+                row["tumor_dice"] = round(tumor_m["Dice"], 4)
+                row["tumor_jaccard"] = round(tumor_m["Jaccard"], 4)
+                row["tumor_recall"] = round(tumor_m["Recall"], 4)
+                row["tumor_precision"] = round(tumor_m["Precision"], 4)
+                row["tumor_FDR"] = round(tumor_m["FDR"], 4)
+
+                liver_metrics_list.append(liver_m)
+                tumor_metrics_list.append(tumor_m)
+
+            rows.append(row)
+
+            if vis_dir is not None and case_idx <= args.vis_n:
+                save_case_visualization(
+                    save_path=os.path.join(vis_dir, f"{case_name}.png"),
+                    image=image,
+                    label=label,
+                    pred1=liver_mask.long(),
+                    tumor_full=tumor_mask.long(),
+                    final_pred=final_pred,
+                    case_name=case_name,
+                )
+
+            if pred_dir is not None:
+                torch.save(
+                    {
+                        "image": image,
+                        "label": label,
+                        "pred": final_pred.unsqueeze(0).long(),
+                        "meta": row,
+                    },
+                    os.path.join(pred_dir, f"{case_name}_pred.pt"),
+                )
+
+            msg = f"[{case_idx}/{len(pt_paths)}] {case_name}"
+            if "liver_dice" in row:
+                msg += f"  liver={row['liver_dice']:.4f}  tumor={row['tumor_dice']:.4f}"
+            print(msg)
+
+    elapsed_hours = (time.time() - time_start) / 3600.0
+
+    # per-case CSV
+    csv_path = os.path.join(workdir, "per_case.csv")
+    fieldnames = [
+        "case_name",
+        "source_pt",
+        "pred_liver_voxels",
+        "pred_tumor_voxels",
+        "liver_dice",
+        "tumor_dice",
+        "tumor_jaccard",
+        "tumor_recall",
+        "tumor_precision",
+        "tumor_FDR",
+    ]
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for r in rows:
+            writer.writerow({k: r.get(k, "") for k in fieldnames})
+
+    # metrics.json
+    metrics = {
+        "split": args.split,
+        "seed": int(args.seed),
         "val_ratio": float(args.val_ratio),
         "test_ratio": float(args.test_ratio),
-        "seed": int(args.seed),
-        "patch": list(args.patch),
-        "sw_batch_size": int(args.sw_batch_size),
-        "overlap": float(args.overlap),
-        "num_workers": int(args.num_workers),
-        "cache_rate": float(args.cache_rate),
+        "n_cases": len(rows),
         "device": device,
-        "gpu_name": gpu_name,
-        "preprocessed_root": args.preprocessed_root,
+        "elapsed_hours": round(elapsed_hours, 3),
+        "liver": summarize_metrics_list(liver_metrics_list, ["Dice"]),
+        "tumor": summarize_metrics_list(
+            tumor_metrics_list, ["Dice", "Jaccard", "Recall", "FDR", "FNR", "Precision"]
+        ),
     }
+    with open(os.path.join(workdir, "metrics.json"), "w", encoding="utf-8") as f:
+        json.dump(metrics, f, ensure_ascii=False, indent=2)
 
-    metrics_out = {
-        "best_epoch": ckpt.get("epoch", "NA"),
-        "n_test_cases": int(n_cases) if n_cases is not None else None,
-        "total_infer_seconds": float(total_sec),
-        "seconds_per_case": float(sec_per_case) if sec_per_case is not None else None,
-        "val_dice_mean_foreground": float(val_mean),
-        "val_dice_per_class": [float(x) for x in per_class],
-        "val_dice_class_ids": [int(x) for x in class_ids],
-    }
+    # report.txt
+    with open(os.path.join(workdir, "report.txt"), "w", encoding="utf-8") as f:
+        f.write("Evaluation Report\n")
+        f.write("=================\n")
+        f.write(f"ckpt: {args.ckpt}\n")
+        f.write(f"workdir: {workdir}\n")
+        f.write(f"split: {metrics['split']}\n")
+        f.write(f"seed: {metrics['seed']}\n")
+        f.write(f"val_ratio: {metrics['val_ratio']}\n")
+        f.write(f"test_ratio: {metrics['test_ratio']}\n")
+        f.write(f"n_cases: {metrics['n_cases']}\n")
+        f.write(f"device: {metrics['device']}\n")
+        f.write(f"elapsed_hours: {metrics['elapsed_hours']}\n\n")
+        for organ, organ_key in [("Liver", "liver"), ("Tumor", "tumor")]:
+            f.write(f"{organ}\n")
+            for metric_name, summary in metrics[organ_key].items():
+                f.write(f"  {metric_name}\n")
+                f.write(f"    mean: {summary['mean']}\n")
+                f.write(f"     std: {summary['std']}\n")
+                f.write(f"     min: {summary['min']}\n")
+                f.write(f"     max: {summary['max']}\n")
+            f.write("\n")
 
-    report_lines = [
-        f"epoch: {metrics_out['best_epoch']}",
-        f"val_dice_mean_foreground: {metrics_out['val_dice_mean_foreground']:.6f}",
-        f"val_dice_per_class: {metrics_out['val_dice_per_class']} (class_ids={metrics_out['val_dice_class_ids']})",
-        f"n_test_cases: {metrics_out['n_test_cases']}",
-        f"total_infer_seconds: {metrics_out['total_infer_seconds']:.2f}",
-        f"seconds_per_case: {metrics_out['seconds_per_case']}",
-    ]
-    report = "\n".join(report_lines)
-    print(report)
-
-    save_cmd(out_dir)
-    save_json(config, out_dir, "config")
-    save_json(metrics_out, out_dir, "metrics")
-    save_report(report, out_dir)
-
-    print("Saved:")
-    print(" -", os.path.join(out_dir, "report.txt"))
-    print(" -", os.path.join(out_dir, "config.json"))
-    print(" -", os.path.join(out_dir, "metrics.json"))
+    print("\n===== Final Metrics =====")
+    print(json.dumps(metrics, ensure_ascii=False, indent=2))
+    print(f"\nSaved to: {workdir}")
 
 
 if __name__ == "__main__":

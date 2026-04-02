@@ -6,6 +6,7 @@ overlap:在推理出使用,让预测结果在边界处平滑
 需要几个=(CT长度-步长)/步长+1
 """
 
+import math
 import os
 import argparse
 
@@ -136,7 +137,10 @@ def parse_args():
         help="离线预处理 .pt 文件目录.传入则走离线流程,不传则走原来的 .nii.gz 流程",
     )
     p.add_argument(
-        "--overlap", type=float, default=0.5, help="滑窗推理重叠率,建议0.25`"
+        "--overlap", type=float, default=0.5, help="训练滑窗推理重叠率（已废弃，仅保留兼容）"
+    )
+    p.add_argument(
+        "--val_overlap", type=float, default=None, help="验证滑窗重叠率，默认继承--overlap"
     )
     p.add_argument(
         "--prefetch_factor",
@@ -243,6 +247,8 @@ def main():
         "timestamp": timestamp,
         "loss": args.loss,
         "overlap": float(args.overlap),
+        "val_patch": list(args.val_patch),
+        "val_overlap": float(args.val_overlap if args.val_overlap is not None else args.overlap),
         "prefetch_factor": int(args.prefetch_factor),
         "preprocessed_root": args.preprocessed_root,  # 方便你对齐目录
         "repeats": int(args.repeats),
@@ -362,13 +368,13 @@ def main():
                 sw_batch_size=int(args.sw_batch_size),
                 num_classes=int(args.num_classes),
                 return_per_class=True,
-                overlap=args.overlap,
+                overlap=args.val_overlap if args.val_overlap is not None else args.overlap,
             )
 
             per = metrics["per_class"]
             val_c1 = float(per[0]) if len(per) > 0 else float("nan")
             val_c2 = float(per[1]) if len(per) > 1 else float("nan")
-            score = val_c1
+            score = (val_c1 + val_c2) / 2 if not math.isnan(val_c2) else val_c1
 
             if score > best:
                 best = score
