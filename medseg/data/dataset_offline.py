@@ -65,28 +65,41 @@ class OfflineDataset(Dataset):
             raise ValueError("pt_paths 为空,OfflineDataset 无法构建.")
 
     def __len__(self):
+        """
+        dataset=OfflineDataset(pt_paths,repeats=6)
+        len(dataset)=len(pt_paths)*repeats
+        这里的len是自定义的len,规则是len作用在谁上,就调用谁的len
+        len(dataset)这里的dataset是OfflineDataset的实例,所以调用OfflineDataset的len
+        len(self.pt_paths):pt_paths是一个list,所以调用list的len
+        """
         return len(self.pt_paths) * self.repeats
 
     def __getitem__(self, idx):
+        """
+        self.pt_paths是路径列表
+        """
         case_idx = idx % len(self.pt_paths)
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", FutureWarning)
             data = torch.load(
                 self.pt_paths[case_idx],
-                map_location="cpu",
-                weights_only=False,
-                mmap=True,
+                map_location="cpu", #将保存至任意设备上的张量,加载时强制映射到CPU内存上
+                weights_only=False,#True:只允许加载张量数据,禁止执行任意Python对象的反序列化
+                #weights_only=True,允许加载任何的Python对象(自定义类,dict,list等)
+                mmap=True, #文件内容,不会立即全部读入RAM,而是按需从磁盘读取(操作系统级别的懒惰加载)
             )
 
         if self.merge_label12_to1:
             if "label" not in data:
                 raise KeyError(f"数据中没有 'label' 键: {self.pt_paths[case_idx]}")
             data["label"] = (data["label"] > 0).long()  # 把标签1和2都变成1,背景是0
+#.long()把数据类型转换为long,损失函数如(CrossEntropyLoss)要求标签是long类型,bool类型会报错
 
         if self.transform is not None:
             data = self.transform(data)
-
+#MONAI的transform输出只有两种情况:
+#dict或者list[dict],下面的代码主要排除list[dict1,dict2,...]这种情况``
         if isinstance(data, list):
             if len(data) == 1:
                 data = data[0]
@@ -122,6 +135,7 @@ class OfflineDataset(Dataset):
         if self.transform is None:
             raise RuntimeError("transform 为 None,无法设置 ratios.")
         if not hasattr(self.transform, "transforms"):
+            #hasattr的是has attribute的意思,判断有没有属性
             raise RuntimeError("transform 不是 Compose,无法设置 ratios.")
 
         for t in self.transform.transforms:
@@ -129,11 +143,22 @@ class OfflineDataset(Dataset):
                 t.ratios = list(ratios)  # type:ignore
                 return
         raise RuntimeError("找不到 RandCropByLabelClassesd")
-
-
+#getattr(obj,"name")等价于obj.name
+#getattr(obj,"name",default)等价于obj.name if hasattr(obj,"name") else default
 def load_pt_paths(preprocessed_dir: str, n: int = 0) -> list:
     """
     返回的是路径列表,
+    paths是列表,sorted()永远返回list,glob 是Unix shell的通配符匹配的缩写(global match)
+    glob.glob(pattern)返回所有匹配的pattern的文件路径,输出是list,
+
+    比如:
+    path=glob.glob("/home/pumengyu/**/*.mp4",recursive=True)
+    **表示匹配任意层级的子目录
+    recursive=True,表示递归匹配,即匹配所有子目录中的文件,必须加,不然,**不生效
+    输出是所有匹配到mp4的完整路径列表
+    from pathlib import Path
+    paths=list(Path("/home/pumengyu").rglob("*.mp4"))
+    rglob等价于递归glob,也就是glob("**/*.mp4",recursive=True)
     """
     paths = sorted(glob.glob(os.path.join(preprocessed_dir, "*.pt")))
     if len(paths) == 0:
@@ -144,10 +169,7 @@ def load_pt_paths(preprocessed_dir: str, n: int = 0) -> list:
 
 
 def split_pt_paths(pt_paths: list, val_ratio: float = 0.2, seed: int = 0):
-
     import random
-
-
     rng = random.Random(seed)
     paths = pt_paths[:]
     rng.shuffle(paths)
@@ -161,7 +183,7 @@ def split_three_ways(
     pt_paths: list, test_ratio: float = 0.1, val_ratio: float = 0.2, seed: int = 0
 ):
     """
-    split_three_ways函数的作用是将pt_paths列表中的数据按照test_ratio和val_ratio的比例分割成三个部分，分别是训练集、验证集和测试集。
+    split_three_ways函数的作用是将pt_paths列表中的数据按照test_ratio和val_ratio的比例分割成三个部分,分别是训练集、验证集和测试集。
     这个函数应该是two-stage的两个阶段的唯一的数据分割函数,确保分割比例一致
     """
     import random
@@ -181,14 +203,17 @@ def split_three_ways(
     return tr, va, te
 
 
-# nnUNet fold0 固定验证集（liver_002,005,...,121，去前导零）
-# 来源：/home/pumengyu/nnUNet_result/fold_0/validation_raw_postprocessed/summary.json
+# nnUNet fold0 固定验证集(liver_002,005,...,121,去前导零)
+# 来源:/home/pumengyu/nnUNet_result/fold_0/validation_raw_postprocessed/summary.json
 _NNUNET_FOLD0_VAL = {
     "liver_2","liver_5","liver_9","liver_12","liver_18","liver_28",
     "liver_44","liver_49","liver_57","liver_58","liver_60","liver_64",
     "liver_69","liver_81","liver_94","liver_98","liver_101","liver_117","liver_121",
 }
-# test集固定：原split_three_ways(seed=0)的结果
+
+#全部大写表示常量(constant),常量一般不修改
+
+# test集固定:原split_three_ways(seed=0)的结果
 _FIXED_TEST = {
     "liver_107","liver_15","liver_27","liver_36","liver_37","liver_4",
     "liver_40","liver_7","liver_71","liver_77","liver_78","liver_87","liver_92",
@@ -197,13 +222,14 @@ _FIXED_TEST = {
 
 def split_fixed(pt_paths: list):
     """
-    固定划分，val对齐nnUNet fold0验证集，保证指标可直接比较。
+    三路划分,
+    固定划分,val对齐nnUNet fold0验证集,保证指标可直接比较。
 
-    val: 19个，与nnUNet fold0完全一致
-    test: 13个，原split_three_ways(seed=0)的test集
+    val: 19个,与nnUNet fold0完全一致
+    test: 13个,原split_three_ways(seed=0)的test集
     train: 剩余99个
 
-    用法：tr, va, te = split_fixed(all_pt)
+    用法:tr, va, te = split_fixed(all_pt)
     """
     import os
 
@@ -213,6 +239,66 @@ def split_fixed(pt_paths: list):
           os.path.basename(p).replace(".pt", "") not in _NNUNET_FOLD0_VAL and
           os.path.basename(p).replace(".pt", "") not in _FIXED_TEST]
     return tr, va, te
+
+
+def split_two(pt_paths: list):
+    """
+    两路划分:train=112个,test=19个,无 val。
+
+    test:  与 nnUNet fold0 验证集完全一致的 19 个,可直接和 nnUNet 指标横向对比
+    train: 剩余 112 个全部参与训练,用 train loss 选 best ckpt
+
+    用法:tr, te = split_two(all_pt)
+    """
+    import os
+
+    te = [p for p in pt_paths if os.path.basename(p).replace(".pt", "") in _NNUNET_FOLD0_VAL]
+    tr = [p for p in pt_paths if os.path.basename(p).replace(".pt", "") not in _NNUNET_FOLD0_VAL]
+    return tr, te
+
+
+# 监控子集：从112个训练案例中手工挑选,覆盖无肿瘤/极小/小/中等/大各类别,
+# 用于训练过程中定期inference监控dice,选best ckpt。
+# 这些案例同时也参与训练,不从训练集中排除。
+_MONITOR_SET = {
+    # 无肿瘤 (1个)
+    "liver_38",
+    # 极小 <5k (2个, 选中间值附近)
+    "liver_24",   # tumor=1,458
+    "liver_62",   # tumor=3,940
+    # 小 5k-50k (3个, 覆盖小/中/大端)
+    "liver_45",   # tumor=7,028
+    "liver_19",   # tumor=12,306
+    "liver_26",   # tumor=39,005
+    # 中等 50k-300k (2个)
+    "liver_82",   # tumor=65,334
+    "liver_88",   # tumor=170,931
+    # 大 >=300k (2个)
+    "liver_56",   # tumor=506,998
+    "liver_33",   # tumor=639,212
+    # 来自原test集补充 (2个,原test并入train后也需要覆盖)
+    "liver_36",   # tumor=58,378 (中等)
+    "liver_77",   # tumor=19,405 (小)
+}
+
+
+def split_two_with_monitor(pt_paths: list):
+    """
+    112个全部参与训练,同时从中抽取有代表性的监控子集用于选best ckpt。
+
+    test:    19个,nnUNet fold0验证集,用于最终和nnUNet指标对比
+    train:   112个,全部参与训练(包含monitor子集)
+    monitor: 12个,train的子集,覆盖无肿瘤/极小/小/中等/大,
+             每隔val_every个epoch在此子集上inference,用dice选best ckpt
+
+    用法: tr, monitor, te = split_two_with_monitor(all_pt)
+    """
+    import os
+
+    te = [p for p in pt_paths if os.path.basename(p).replace(".pt", "") in _NNUNET_FOLD0_VAL]
+    tr = [p for p in pt_paths if os.path.basename(p).replace(".pt", "") not in _NNUNET_FOLD0_VAL]
+    monitor = [p for p in tr if os.path.basename(p).replace(".pt", "") in _MONITOR_SET]
+    return tr, monitor, te
 
 
 # /home/pumengyu/medseg_project/medseg/utils/train_utils.py

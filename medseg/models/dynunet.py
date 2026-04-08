@@ -17,7 +17,7 @@ Transformer:
 Encoder(Transformer),Decoder(Transformer),Skip Connection
 
 """
-def build_dynunet(in_channels=1, out_channels=2):
+def build_dynunet(in_channels=1, out_channels=2, deep_supervision=True):
     return DynUNet(
         spatial_dims=3,
         in_channels=in_channels,
@@ -25,5 +25,5 @@ def build_dynunet(in_channels=1, out_channels=2):
         kernel_size=[[3,3,3],[3,3,3],[3,3,3],[3,3,3],[3,3,3]],
         strides=[[1,1,1],[2,2,2],[2,2,2],[2,2,2],[2,2,2]],
         upsample_kernel_size=[[2,2,2],[2,2,2],[2,2,2],[2,2,2]],
-        deep_supervision=False,
+        deep_supervision=deep_supervision,
     )
