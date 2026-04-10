@@ -8,14 +8,15 @@ from monai.losses.tversky import TverskyLoss
 
 class FocalTverskyLoss(nn.Module):
     """
-    Focal Tversky Loss，专为小目标设计。
+    Focal Tversky Loss,专为小目标设计。
     L = (1 - TI)^gamma
     TI = TP / (TP + alpha*FP + beta*FN)
-    alpha=0.3, beta=0.7: 加大FN惩罚，减少漏检
-    gamma=0.75: focal加权，让hard sample贡献更大
+    alpha=0.3, beta=0.7: 加大FN惩罚,减少漏检
+    gamma=0.75: focal加权,让hard sample贡献更大
 
-    用softmax+one-hot避免sigmoid的数值不稳定（之前tversky出NaN的原因）。
+    用softmax+one-hot避免sigmoid的数值不稳定(之前tversky出NaN的原因)。
     """
+
     def __init__(self, alpha=0.3, beta=0.7, gamma=0.75, eps=1e-6):
         super().__init__()
         self.alpha = alpha
@@ -28,21 +29,27 @@ class FocalTverskyLoss(nn.Module):
         # 强制 float32 防止 AMP fp16 下 softmax/除法 溢出导致 NaN
         logits = logits.float()
         probs = torch.softmax(logits, dim=1)  # softmax避免sigmoid NaN
-        # one-hot: [B, C, D, H, W]
+        # targets:[B,D,H,W],第三个1 让它变成[B,1,D,H,W]
+        # 这里的值是标签0,1,2等,这个的targets_onehot维度是[B,C,D,H,W]
         targets_onehot = torch.zeros_like(probs)
         targets_onehot.scatter_(1, targets.long(), 1)
+        # scatter_是散步/分散得意思,将整数标签转换为one-hot编码
+        #
+        # probs:[B,C,D,H,W]这里的C是总得类别数,B[:,0,...]就是背景类,
+        p = probs[:, 1:]  # [:,1:]表示跳过背景类
 
-        # 向量化所有前景类，避免 Python for 循环的 CUDA sync 开销
-        # p/t: [B, n_fg, D, H, W]，其中 n_fg = n_classes - 1
-        p = probs[:, 1:]
         t = targets_onehot[:, 1:]
-        dims = tuple(range(2, p.ndim))  # 对空间维度求和，保留 B 和 C 维度
-        tp = (p * t).sum(dim=dims)
+        # p:[B,C-1,D,H,W]这个得p.ndim=5,这里的range(2,5)=[2,3,4]
+        dims = tuple(range(2, p.ndim))
+        # p:[B,C-1,D,H,W],t:[B,C-1,D,H,W],
+        # p,t都是float32,p是预测概率,t是标签的one-hot,值为0或1
+        tp = (p * t).sum(dim=dims)  # tp:[B,C-1]
         fp = (p * (1 - t)).sum(dim=dims)
         fn = ((1 - p) * t).sum(dim=dims)
         tversky_index = tp / (tp + self.alpha * fp + self.beta * fn + self.eps)
         loss = ((1 - tversky_index) ** self.gamma).mean()
         return loss
+
 
 """
 
@@ -93,7 +100,7 @@ train.py
 
 
 def _debug_batch_type(batch):
-    """打印 batch 的类型结构，仅用于第一个 batch 的调试"""
+    """打印 batch 的类型结构,仅用于第一个 batch 的调试"""
     print("type(batch) =", type(batch))
     if isinstance(batch, dict):
         print("batch.keys() =", batch.keys())
@@ -228,7 +235,9 @@ def train_one_epoch_softmax(
             loss = loss_fn(logits, y)
             if torch.isnan(loss) or torch.isinf(loss):
                 n_nan += 1
-                print(f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})")
+                print(
+                    f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})"
+                )
                 optimizer.zero_grad(set_to_none=True)
                 continue
             loss.backward()
@@ -240,7 +249,9 @@ def train_one_epoch_softmax(
             loss = loss_fn(logits.float(), y)
             if torch.isnan(loss) or torch.isinf(loss):
                 n_nan += 1
-                print(f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})")
+                print(
+                    f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})"
+                )
                 optimizer.zero_grad(set_to_none=True)
                 continue
             scaler.scale(loss).backward()
@@ -258,28 +269,29 @@ def train_one_epoch_softmax(
             )
 
     if n_nan > 0:
-        print(f"[warn] epoch had {n_nan} NaN/Inf batches skipped out of {n_valid + n_nan} total")
+        print(
+            f"[warn] epoch had {n_nan} NaN/Inf batches skipped out of {n_valid + n_nan} total"
+        )
     return running / max(1, n_valid)
 
 
 def _deep_supervision_loss(loss_fn, logits, y):
     """
     处理 DynUNet deep_supervision=True 时训练模式的多尺度输出。
-    logits: [B, N, C, D, H, W]（N 个尺度）或普通 [B, C, D, H, W]
-    权重方案（nnUNet）: w_i = 1/2^i，归一化后加权求和。
-    scale 0 是最终输出（权重最大），scale 1+ 是辅助输出。
+    logits: [B, N, C, D, H, W](N 个尺度)或普通 [B, C, D, H, W]
+    权重方案(nnUNet): w_i = 1/2^i,归一化后加权求和。
+    scale 0 是最终输出(权重最大),scale 1+ 是辅助输出。
+    DynUNet开启deep_supervision=True,模型训练阶段会输出多个尺度的预测,而不只是最终输出;这个函数负责把这些多尺度的输出的损失加权合并成一个总损失.
+
     """
     if logits.ndim == 5:
-        # 没开深监督，普通前向
+        # 没开深监督,普通前向
         return loss_fn(logits, y)
-    # logits: [B, N, C, D, H, W]
+
     n = logits.shape[1]
-    weights = [1.0 / (2 ** i) for i in range(n)]
+    weights = [1.0 / (2**i) for i in range(n)]
     w_sum = sum(weights)
-    total = sum(
-        (w / w_sum) * loss_fn(logits[:, i], y)
-        for i, w in enumerate(weights)
-    )
+    total = sum((w / w_sum) * loss_fn(logits[:, i], y) for i, w in enumerate(weights))
     return total
 
 
@@ -292,7 +304,7 @@ def train_one_epoch_sigmoid_binary(
     loss_type="dicece",
     epoch=None,
     epochs=None,
-    loss_fn=None,  # 外部传入可复用，避免每 epoch 重建
+    loss_fn=None,  # 外部传入可复用,避免每 epoch 重建
 ):
     model.train()
     if loss_fn is None:
@@ -309,23 +321,26 @@ def train_one_epoch_sigmoid_binary(
             _debug_batch_type(batch)
 
         while isinstance(batch, list):
+            # 有时候batch是list[tuple1],甚至list[list[tuple1]]
             batch = batch[0]
-
+        # 后面用到batch["image"]所以batch必须是字典,
         x = batch["image"].to(device, non_blocking=True)
         y = batch["label"].to(device, non_blocking=True)
-
+        # y是真实标签,x是输入图像
         if y.ndim == 4:
             y = y.unsqueeze(1)
         y = y.long()
 
-        # 二分类强约束: 标签只能是 0/1（仅前3个step检查，避免每step cuda sync拖慢训练）
+        # 二分类强约束: 标签只能是 0/1(仅前3个step检查,避免每step cuda sync拖慢训练)
         if step <= 3:
-            yy = y[:, 0]
+            # 这里的y:[B,1,D,H,W]
+            yy = y[:, 0]  # yy:[B,D,H,W],去掉那个1维,因为它没什么用,标签就是0/1的值
             u = torch.unique(yy).detach().cpu().tolist()
+            
             tumor_vox = int((yy == 1).sum().item())
             bg_vox = int((yy == 0).sum().item())
             print(
-                f"[debug-binary] batch {step}: unique={u} bg_vox={bg_vox} tumor_vox={tumor_vox}"
+                f"[二分类调试] 第1个batch {step}: 出现的类别={u} bg_vox={bg_vox} tumor_vox={tumor_vox}"
             )
             if not all(v in (0, 1) for v in u):
                 raise ValueError(
@@ -339,7 +354,9 @@ def train_one_epoch_sigmoid_binary(
             loss = _deep_supervision_loss(loss_fn, logits, y)
             if torch.isnan(loss) or torch.isinf(loss):
                 n_nan += 1
-                print(f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})")
+                print(
+                    f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})"
+                )
                 optimizer.zero_grad(set_to_none=True)
                 continue
             loss.backward()
@@ -351,7 +368,9 @@ def train_one_epoch_sigmoid_binary(
                 loss = _deep_supervision_loss(loss_fn, logits, y)
             if torch.isnan(loss) or torch.isinf(loss):
                 n_nan += 1
-                print(f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})")
+                print(
+                    f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})"
+                )
                 optimizer.zero_grad(set_to_none=True)
                 continue
             scaler.scale(loss).backward()
@@ -369,7 +388,9 @@ def train_one_epoch_sigmoid_binary(
             )
 
     if n_nan > 0:
-        print(f"[warn] epoch had {n_nan} NaN/Inf batches skipped out of {n_valid + n_nan} total")
+        print(
+            f"[warn] epoch had {n_nan} NaN/Inf batches skipped out of {n_valid + n_nan} total"
+        )
     return running / max(1, n_valid)
 
 
@@ -439,7 +460,7 @@ def validate_sliding_window(
                 inter = (p & g).sum(dim=(1, 2, 3)).double()
                 denom = p.sum(dim=(1, 2, 3)).double() + g.sum(dim=(1, 2, 3)).double()
 
-                # denom==0 表示预测和标签都为空（如无肿瘤case且预测也无肿瘤），视为完美预测dice=1.0
+                # denom==0 表示预测和标签都为空(如无肿瘤case且预测也无肿瘤),视为完美预测dice=1.0
                 d = torch.where(denom == 0, torch.ones_like(inter), 2.0 * inter / denom)
 
                 dices.append(d.mean().detach().cpu())
