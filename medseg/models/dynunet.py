@@ -27,3 +27,17 @@ def build_dynunet(in_channels=1, out_channels=2, deep_supervision=True):
         upsample_kernel_size=[[2,2,2],[2,2,2],[2,2,2],[2,2,2]],
         deep_supervision=deep_supervision,
     )
+
+
+def build_dynunet_deep(in_channels=1, out_channels=2, deep_supervision=True):
+    """6层更深版本，参数量~31M，对齐nnUNet Task003实际配置。"""
+    return DynUNet(
+        spatial_dims=3,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=[[3,3,3],[3,3,3],[3,3,3],[3,3,3],[3,3,3],[3,3,3]],
+        strides=[[1,1,1],[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2]],
+        upsample_kernel_size=[[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2]],
+        filters=[32,64,128,256,320,320],
+        deep_supervision=deep_supervision,
+    )

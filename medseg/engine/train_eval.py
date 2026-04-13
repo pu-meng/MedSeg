@@ -181,7 +181,7 @@ def build_loss_fn_binary(loss_type="dicece"):
             beta=beta,
         )
     elif loss_type == "focaltversky":
-        return FocalTverskyLoss(alpha=0.3, beta=0.7, gamma=0.75)
+        return FocalTverskyLoss(alpha=0.4, beta=0.6, gamma=0.75)
     else:
         raise ValueError(f"Unknown loss type: {loss_type}")
 
@@ -352,21 +352,21 @@ def train_one_epoch_sigmoid_binary(
         if scaler is None:
             logits = model(x)
             loss = _deep_supervision_loss(loss_fn, logits, y)
-            if torch.isnan(loss) or torch.isinf(loss):
+            if torch.isnan(loss) or torch.isinf(loss): #type:ignore
                 n_nan += 1
                 print(
                     f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})"
                 )
                 optimizer.zero_grad(set_to_none=True)
                 continue
-            loss.backward()
+            loss.backward()#type:ignore
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
         else:
             with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True):
                 logits = model(x)
                 loss = _deep_supervision_loss(loss_fn, logits, y)
-            if torch.isnan(loss) or torch.isinf(loss):
+            if torch.isnan(loss) or torch.isinf(loss):  #type:ignore
                 n_nan += 1
                 print(
                     f"[warn] step={step} NaN/Inf loss, skipping (total skipped={n_nan})"
@@ -379,12 +379,12 @@ def train_one_epoch_sigmoid_binary(
             scaler.step(optimizer)
             scaler.update()
 
-        running += float(loss.item())
+        running += float(loss.item())#type:ignore
         n_valid += 1
 
         if step % 10 == 0:
             print(
-                f"[train-binary] step={step}/{len(loader)} loss={float(loss.item()):.4f}"
+                f"[train-binary] step={step}/{len(loader)} loss={float(loss.item()):.4f}"  #type:ignore
             )
 
     if n_nan > 0:
