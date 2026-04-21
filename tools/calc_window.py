@@ -18,7 +18,7 @@ def main():
     p.add_argument(
         "--data_root",
         type=str,
-        default="/home/pumengyu/Task03_Liver",
+        default="/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver",
     )
     args = p.parse_args()
 

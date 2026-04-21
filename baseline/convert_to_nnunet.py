@@ -32,7 +32,7 @@ import glob
 import json
 
 
-src = "/home/pumengyu/Task03_Liver"
+src = "/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver"
 dst = "/home/pumengyu/nnunet/raw/Dataset003_Liver"
 
 os.makedirs(f"{dst}/imagesTr", exist_ok=True)

@@ -10,8 +10,8 @@ preprocess_offline.py
 
 使用方式:
   python tools/preprocess_offline.py \
-    --data_root /home/pumengyu/Task03_Liver \
-    --out_dir   /home/pumengyu/Task03_Liver_pt \
+    --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver \
+    --out_dir   /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
     --num_workers 4
 
 训练时 transforms 只需保留随机增强部分,速度大幅提升.
@@ -48,13 +48,13 @@ def parse_args():
     p.add_argument(
         "--data_root",
         type=str,
-        default="/home/pumengyu/Task03_Liver",
+        default="/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver",
         help="原始数据集根目录(含 imagesTr/ 和 labelsTr/)",
     )
     p.add_argument(
         "--out_dir",
         type=str,
-        default="/home/pumengyu/Task03_Liver_pt",
+        default="/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt",
         help="输出目录,保存预处理后的 .pt 文件",
     )
     p.add_argument(

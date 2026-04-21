@@ -5,7 +5,7 @@ from medseg.data.dataset_offline import OfflineDataset
 from medseg.data.transforms_offline import build_train_transforms
 from torch.utils.data import DataLoader
 
-pt_dir = "/home/pumengyu/Task03_Liver_pt"
+pt_dir = "/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt"
 paths = sorted(glob.glob(pt_dir + "/*.pt"))[:20]
 
 tf = build_train_transforms((96, 96, 96))

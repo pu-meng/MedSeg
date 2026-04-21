@@ -2,7 +2,7 @@ from medseg.data.msd import load_msd_dataset, fixed_split
 from medseg.data.transforms import build_train_transforms
 import nibabel as nib
 
-DATA_ROOT = "/home/pumengyu/Task03_Liver"
+DATA_ROOT = "/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver"
 
 items, _ = load_msd_dataset(DATA_ROOT)
 tr, va = fixed_split(items, val_ratio=0.2, seed=0)

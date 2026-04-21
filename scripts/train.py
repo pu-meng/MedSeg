@@ -42,10 +42,12 @@ from medseg.utils.io_utils import ensure_dir, save_cmd, save_json, save_report
 
 setup_warnings()
 
-
+#MONAI的RandCropyByLabelClassesd在某些patch找不到某个类时会疯狂报Warning,训练日志会被刷屏,这里的直接忽略
 warnings.filterwarnings("ignore", message="no available indices of class")
-DEFAULT_DATA_ROOT = "/home/pumengyu/Task03_Liver"
-DEFAULT_EXP_ROOT = "/home/pumengyu/experiments"
+
+
+DEFAULT_DATA_ROOT = "/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver"
+DEFAULT_EXP_ROOT = "/home/PuMengYu/MSD_LiverTumorSeg/experiments"
 
 
 def short(path, keep=3):
@@ -66,7 +68,7 @@ def short(path, keep=3):
 
 
     """
-
+    
     parts = Path(path).parts
     return "/".join(parts[-keep:])
 

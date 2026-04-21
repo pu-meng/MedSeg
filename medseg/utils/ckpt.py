@@ -80,6 +80,29 @@ def save_ckpt_full(
 
 
 
+def load_init_weights(path, model, map_location="cpu"):
+    """
+    从 path 加载 checkpoint，筛选「名字相同且形状相同」的参数复制到 model，
+    其他不匹配的层保持原样（随机初始化或已有的值）。
+    """
+    ckpt = torch.load(path, map_location=map_location, weights_only=False)
+    src = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+    if any(k.startswith("_orig_mod.") for k in src):
+        src = {k.removeprefix("_orig_mod."): v for k, v in src.items()}
+
+    dst = model.state_dict()
+    matched = {k: v for k, v in src.items() if k in dst and dst[k].shape == v.shape}
+    # dynunet_ca 的 backbone 参数名带 backbone. 前缀，裸 ckpt 里没有，尝试加前缀重映射
+    if len(matched) == 0:
+        remapped = {"backbone." + k: v for k, v in src.items()}
+        matched = {
+            k: v for k, v in remapped.items() if k in dst and dst[k].shape == v.shape
+        }
+    dst.update(matched)
+    model.load_state_dict(dst, strict=False)
+    print(f"[init] loaded {len(matched)} matched params from {path}")
+
+
 def load_ckpt_full(
     path,
     model,
@@ -107,7 +130,15 @@ def load_ckpt_full(
         optimizer.load_state_dict(ckpt["optim"])
 
     if scheduler is not None and "scheduler" in ckpt:
-        scheduler.load_state_dict(ckpt["scheduler"])
+        try:
+            scheduler.load_state_dict(ckpt["scheduler"])
+        except (KeyError, ValueError):
+            # scheduler state_dict 与当前版本不兼容时跳过,
+            # 手动 step 追到已训练的 epoch, 使 LR 与中断时一致
+            resumed_epoch = int(ckpt.get("epoch", 0))
+            for _ in range(resumed_epoch):
+                scheduler.step()
+            print(f"[resume] scheduler state incompatible, fast-forwarded {resumed_epoch} steps")
 
     if scaler is not None and "scaler" in ckpt:
         scaler.load_state_dict(ckpt["scaler"])

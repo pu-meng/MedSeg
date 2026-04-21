@@ -1,6 +1,6 @@
 """
 检查 Task03_Liver 数据集是否完整
-用法:  python -m scripts.check.check_dataset --data_root /home/PuMengYu/Task03_Liver
+用法:  python -m scripts.check.check_dataset --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver
 """
 import os
 import argparse

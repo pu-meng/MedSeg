@@ -11,7 +11,7 @@ foreground 定义：label > 0（肝脏+肿瘤区域）
 
 用法：
   python tools/calc_ct_intensity_stats.py \
-    --data_root /home/pumengyu/Task03_Liver
+    --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver
 """
 
 import argparse
@@ -25,7 +25,7 @@ from tqdm import tqdm
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--data_root", type=str, default="/home/pumengyu/Task03_Liver")
+    p.add_argument("--data_root", type=str, default="/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver")
     p.add_argument("--num_samples", type=int, default=10000,
                    help="每个 case 采样的 foreground voxel 数量")
     return p.parse_args()

@@ -8,8 +8,8 @@ LOG_FILE=wait_gpu.log   # 等待过程日志
 TRAIN_CMD='python -u -m scripts.train \
     --task liver \
     --exp_name liver_online \
-    --data_root /home/PuMengYu/Task03_Liver \
-    --exp_root /home/PuMengYu/experiments \
+    --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver \
+    --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments \
     --num_classes 3 \
     --epochs 200 \
     --batch_size 2 \
@@ -20,7 +20,7 @@ TRAIN_CMD='python -u -m scripts.train \
     --cache_rate 0.3 \
     --amp \
     --loss dicefocal \
-    --resume /home/PuMengYu/experiments/liver_online/train/03-09-09-06-43/last.pt'
+    --resume /home/PuMengYu/MSD_LiverTumorSeg/experiments/liver_online/train/03-09-09-06-43/last.pt'
 # ===================
 
 echo "===== $(date '+%F %T') auto_train start =====" | tee -a "$LOG_FILE"

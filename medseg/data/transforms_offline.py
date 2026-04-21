@@ -10,7 +10,7 @@ transforms_offline.py
 """
 
 from monai.transforms.croppad.dictionary import RandCropByLabelClassesd
-from monai.transforms.spatial.dictionary import RandFlipd, RandZoomd, RandRotated, RandSimulateLowResolutiond
+from monai.transforms.spatial.dictionary import RandFlipd, RandZoomd, RandRotated, RandSimulateLowResolutiond, Rand3DElasticd
 from monai.transforms.intensity.dictionary import (
     RandGaussianNoised,
     RandGaussianSmoothd,
@@ -49,6 +49,16 @@ def build_train_transforms(patch_size=(144, 144, 144), ratios=(0.0, 1.0)):
                 allow_smaller=True,
             ),
             # ── 几何增强 ──────────────────────────────────────────────────
+            # Elastic deformation：对应nnUNet ElasticDeformationTransform, p=0.2
+            # sigma控制形变平滑度,magnitude控制形变幅度
+            Rand3DElasticd(
+                keys=["image", "label"],
+                sigma_range=(3.0, 5.0),
+                magnitude_range=(100.0, 200.0),
+                prob=0.2,
+                mode=["bilinear", "nearest"],
+                padding_mode="border",
+            ),
             RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
             RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
             RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
@@ -56,9 +66,9 @@ def build_train_transforms(patch_size=(144, 144, 144), ratios=(0.0, 1.0)):
             # prob=0.2对应nnUNet的p_rotation=0.2
             RandRotated(
                 keys=["image", "label"],
-                range_x=3.14159,  # 3.14159弧度=180度
-                range_y=3.14159,
-                range_z=3.14159,
+                range_x=3.14159/6.0,  # 3.14159弧度=180度
+                range_y=3.14159/6.0,
+                range_z=3.14159/6.0,
                 prob=0.2,
                 mode=["bilinear", "nearest"],
                 padding_mode="border",

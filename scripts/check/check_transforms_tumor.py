@@ -3,7 +3,7 @@ from medseg.data.msd import load_msd_dataset, fixed_split
 from medseg.data.transforms import build_train_transforms, build_val_transforms
 from monai.data.dataset import Dataset, DataLoader
 
-DATA_ROOT = "/home/pumengyu/Task03_Liver"  # 改
+DATA_ROOT = "/home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver"  # 改
 PATCH = (96, 96, 96)
 VAL_RATIO = 0.2
 SEED = 0

@@ -265,7 +265,7 @@ diff /tmp/img_ids.txt /tmp/lab_ids.txt
 CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
   --task liver \
   --exp_name liver_online_v0 \
-  --data_root /home/PuMengYu/Task03_Liver \
+  --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver \
   --num_classes 3 \
   --epochs 200 \
   --batch_size 2 \
@@ -281,8 +281,8 @@ CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
 CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
   --task liver \
   --exp_name liver_online \
-  --data_root /home/PuMengYu/Task03_Liver \
-  --exp_root /home/PuMengYu/experiments \
+  --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver \
+  --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments \
   --num_classes 3 \
   --epochs 200 \
   --batch_size 2 \
@@ -299,8 +299,8 @@ CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
 CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
     --task liver \
     --exp_name liver_online \
-    --data_root /home/PuMengYu/Task03_Liver \
-    --exp_root /home/PuMengYu/experiments \
+    --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver \
+    --exp_root /home/PuMengYu/MSD_LiverTumorSeg/experiments \
     --num_classes 3 \
     --epochs 200 \
     --batch_size 2 \
@@ -311,5 +311,5 @@ CUDA_VISIBLE_DEVICES=0 python -m scripts.train \
     --cache_rate 0.3 \
     --amp \
     --loss dicefocal \
-    --resume /home/PuMengYu/experiments/liver_online/train/03-09-09-06-43/last.pt \
+    --resume /home/PuMengYu/MSD_LiverTumorSeg/experiments/liver_online/train/03-09-09-06-43/last.pt \
 2>&1 | tee train.log

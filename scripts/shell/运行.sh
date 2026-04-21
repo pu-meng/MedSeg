@@ -2,8 +2,8 @@ PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 python -
   --task liver \
   --exp_name dynunet_v1_sgd \
   --model dynunet \
-  --data_root /home/pumengyu/Task03_Liver \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
   --num_classes 3 \
   --epochs 300 \
   --batch_size 1 \
@@ -35,8 +35,8 @@ workdir = os.path.join(args.exp_root, args.exp_name, "train", timestamp)
 # ============================================================
 
 CUDA_VISIBLE_DEVICES=1 PYTHONPATH=/home/pumengyu:$PYTHONPATH python -m scripts.eval \
-  --ckpt /home/pumengyu/experiments/dynunet_liver_tumor_stage1/train/03-29-21-29-13/best.pt \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --ckpt /home/PuMengYu/MSD_LiverTumorSeg/experiments/dynunet_liver_tumor_stage1/train/03-29-21-29-13/best.pt \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
   --model dynunet \
   --num_classes 3 \
   --patch 96 96 96 \
@@ -54,8 +54,8 @@ PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 python -
   --task liver \
   --exp_name dynunet_liver_only \
   --model dynunet \
-  --data_root /home/pumengyu/Task03_Liver \
-  --preprocessed_root /home/pumengyu/Task03_Liver_pt \
+  --data_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver \
+  --preprocessed_root /home/PuMengYu/MSD_LiverTumorSeg/Task03_Liver_pt \
   --num_classes 2 \
   --epochs 200 \
   --batch_size 1 \

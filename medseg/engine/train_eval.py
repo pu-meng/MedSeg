@@ -51,6 +51,21 @@ class FocalTverskyLoss(nn.Module):
         return loss
 
 
+class DiceCEFocalTverskyLoss(nn.Module):
+    """DiceCE + FocalTversky 组合损失，等权求和。
+    DiceCE 保证整体分割精度，FocalTversky 强化对漏检(FN)的惩罚提升 Recall。
+    weight=0.5 时两者等权，调大 weight 偏向 DiceCE（更高 Precision），调小偏向 FocalTversky（更高 Recall）。
+    """
+    def __init__(self, ft_alpha=0.3, ft_beta=0.7, ft_gamma=0.75, weight=0.5):
+        super().__init__()
+        self.weight = weight
+        self.dicece = DiceCELoss(include_background=False, to_onehot_y=True, softmax=True)
+        self.focaltversky = FocalTverskyLoss(alpha=ft_alpha, beta=ft_beta, gamma=ft_gamma)
+
+    def forward(self, logits, y):
+        return self.weight * self.dicece(logits, y) + (1 - self.weight) * self.focaltversky(logits, y)
+
+
 """
 
 前景:有人体结构的区域
@@ -181,7 +196,9 @@ def build_loss_fn_binary(loss_type="dicece"):
             beta=beta,
         )
     elif loss_type == "focaltversky":
-        return FocalTverskyLoss(alpha=0.4, beta=0.6, gamma=0.75)
+        return FocalTverskyLoss(alpha=0.5, beta=0.5, gamma=0.75)
+    elif loss_type == "dicece_focaltversky":
+        return DiceCEFocalTverskyLoss(ft_alpha=0.3, ft_beta=0.7, ft_gamma=0.75, weight=0.5)
     else:
         raise ValueError(f"Unknown loss type: {loss_type}")
 
@@ -421,7 +438,9 @@ def validate_sliding_window(
     model.eval()
 
     class_ids = list(range(1, num_classes))
-    sum_dice = torch.zeros(len(class_ids), device="cpu", dtype=torch.float64)
+    n_classes = len(class_ids)
+    sum_dice = torch.zeros(n_classes, device="cpu", dtype=torch.float64)
+    n_valid_per_class = torch.zeros(n_classes, device="cpu", dtype=torch.int64)
     n_batches = 0
 
     with torch.no_grad():
@@ -451,31 +470,33 @@ def validate_sliding_window(
 
             pred = torch.argmax(logits, dim=1)
 
-            dices = []
-
-            for c in class_ids:
+            for i, c in enumerate(class_ids):
                 p = pred == c  # 预测中属于类别 c 的体素
                 g = y == c  # 标签中属于类别 c 的体素
 
                 inter = (p & g).sum(dim=(1, 2, 3)).double()
                 denom = p.sum(dim=(1, 2, 3)).double() + g.sum(dim=(1, 2, 3)).double()
+                gt_sum = g.sum(dim=(1, 2, 3)).double()
 
-                # denom==0 表示预测和标签都为空(如无肿瘤case且预测也无肿瘤),视为完美预测dice=1.0
-                d = torch.where(denom == 0, torch.ones_like(inter), 2.0 * inter / denom)
+                # 只对 gt 非空的 case 计算 dice；无肿瘤 case 不计入，避免虚高
+                valid = gt_sum > 0
+                if valid.any():
+                    d_valid = 2.0 * inter[valid] / denom[valid].clamp(min=1e-8)
+                    sum_dice[i] += d_valid.mean().detach().cpu()
+                    n_valid_per_class[i] += 1
 
-                dices.append(d.mean().detach().cpu())
-
-            dices = torch.stack(dices)
-
-            sum_dice += dices
             n_batches += 1
 
             del x, y, logits, pred
 
-    per_class = (sum_dice / max(1, n_batches)).tolist()
-    mean_fg = float(sum(per_class) / max(1, len(per_class)))
+    per_class = [
+        float(sum_dice[i] / n_valid_per_class[i]) if n_valid_per_class[i] > 0 else float("nan")
+        for i in range(n_classes)
+    ]
+    valid_scores = [s for s in per_class if not (s != s)]  # filter nan
+    mean_fg = float(sum(valid_scores) / len(valid_scores)) if valid_scores else 0.0
 
-    print(f"Dice 每个类别:{[float(x) for x in per_class]}")
+    print(f"Dice 每个类别:{[round(s, 4) for s in per_class]} (仅统计有gt的case, n={n_valid_per_class.tolist()})")
 
     return {
         "mean_fg": mean_fg,
